@@ -35,12 +35,16 @@ def test_allocate_by_stop_risk_sizes_by_distance():
         price=100,
         tracker=tracker,
         risk_pct=0.1,
-        max_drawdown_pct=0.10,
+        per_trade_risk_pct=0.02,
     )
     assert len(allocs) == 2
-    # Equal risk budgets
+    # Equal per-trade risk budgets
     assert abs(allocs[0].risk_usd - allocs[1].risk_usd) < 1e-6
+    assert abs(allocs[0].risk_usd - 200.0) < 1e-6
     # Wider stop distance => smaller qty
     by_tf = {a.signal.tf_min: a for a in allocs}
     # Wider protective distance (tf60: 100-50=50 vs tf15: 100-90=10) => smaller qty
     assert by_tf[15].qty > by_tf[60].qty
+    assert by_tf[15].protect_stop == 90.0
+    assert by_tf[60].protect_stop == 50.0
+    assert by_tf[15].entry_trigger == 105.0

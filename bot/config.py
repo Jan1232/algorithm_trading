@@ -29,6 +29,11 @@ class Settings:
     deposit_from_wallet: bool = True
     max_drawdown_pct: float = 0.10
     tf_risk_pct: float = 0.10
+    per_trade_risk_pct: float = 0.02
+    max_leverage_frac: float = 1.0
+    trailing_buffer_frac: float = 0.10
+    vote_min_directional: int = 2
+    vote_min_margin: int = 2
     tf_horizon_min: int = 1440
     tf_step_min: int = 15
     timeframes_explicit: list[int] = field(default_factory=list)
@@ -79,6 +84,12 @@ class Settings:
             "deposit_usd": self.deposit_usd,
             "max_drawdown_pct": self.max_drawdown_pct,
             "tf_risk_pct": self.tf_risk_pct,
+            "per_trade_risk_pct": self.per_trade_risk_pct,
+            "max_leverage_frac": self.max_leverage_frac,
+            "trailing_buffer_frac": self.trailing_buffer_frac,
+            "vote_min_directional": self.vote_min_directional,
+            "vote_min_margin": self.vote_min_margin,
+            "one_position_per_symbol": self.one_position_per_symbol,
             "symbols": self.symbols,
             "timeframes_min": self.timeframes_min,
             "taker_fee_bps": self.costs.taker_fee_bps,
@@ -127,7 +138,6 @@ def load_settings(
     db_paper = str(raw.get("db_path_paper") or (root / "data" / "bot_paper.db"))
     db_demo = str(raw.get("db_path_demo") or (root / "data" / "bot_demo.db"))
     db_live = str(raw.get("db_path_live") or (root / "data" / "bot_live.db"))
-    # Legacy single path — used only if mode-specific not resolved
     db_legacy = str(raw.get("db_path") or (root / "data" / "bot.db"))
 
     settings = Settings(
@@ -138,6 +148,11 @@ def load_settings(
         deposit_from_wallet=bool(raw.get("deposit_from_wallet", True)),
         max_drawdown_pct=float(raw.get("max_drawdown_pct", 0.10)),
         tf_risk_pct=float(raw.get("tf_risk_pct", 0.10)),
+        per_trade_risk_pct=float(raw.get("per_trade_risk_pct", 0.02)),
+        max_leverage_frac=float(raw.get("max_leverage_frac", 1.0)),
+        trailing_buffer_frac=float(raw.get("trailing_buffer_frac", 0.10)),
+        vote_min_directional=int(raw.get("vote_min_directional", 2)),
+        vote_min_margin=int(raw.get("vote_min_margin", 2)),
         tf_horizon_min=int(raw.get("tf_horizon_min", 1440)),
         tf_step_min=int(raw.get("tf_step_min", 15)),
         timeframes_explicit=explicit,
@@ -160,6 +175,5 @@ def load_settings(
         exit_mode=str(raw.get("exit_mode", "hybrid")).lower(),
         config_path=cfg_file,
     )
-    # Apply mode-specific DB immediately so --report/--cabinet use the right file
     settings.db_path = settings.resolve_db_path()
     return settings

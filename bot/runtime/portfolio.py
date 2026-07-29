@@ -24,7 +24,12 @@ class SymbolWorker:
     ) -> None:
         self.symbol = symbol
         self.settings = settings
-        self.mtf = MultiTFEngine(symbol, settings.timeframes_min)
+        self.mtf = MultiTFEngine(
+            symbol,
+            settings.timeframes_min,
+            vote_min_directional=settings.vote_min_directional,
+            vote_min_margin=settings.vote_min_margin,
+        )
         self.order_manager = order_manager
         self.liquidity = liquidity
         self.store = store
@@ -51,7 +56,7 @@ class SymbolWorker:
                 sid = self.store.save_signal(sig, vote, mode=self.settings.mode)
                 signal_ids[sig.tf_min] = sid
             logger.info(
-                "signal %s %s tf=%s | %s | vote L=%d S=%d F=%d",
+                "signal %s %s tf=%s | %s | vote L=%d S=%d F=%d N=%d",
                 sig.kind.value,
                 sig.symbol,
                 sig.tf_min,
@@ -59,6 +64,7 @@ class SymbolWorker:
                 vote.n_long,
                 vote.n_short,
                 vote.n_flat,
+                vote.n_none,
             )
 
         self.order_manager.on_signals(

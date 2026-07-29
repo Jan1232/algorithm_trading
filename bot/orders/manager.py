@@ -68,6 +68,9 @@ class OrderManager:
         mode: str = "paper",
         policy_hash: Optional[str] = None,
         one_position_per_symbol: bool = True,
+        per_trade_risk_pct: float = 0.02,
+        max_leverage_frac: float = 1.0,
+        trailing_buffer_frac: float = 0.10,
     ) -> None:
         self.broker = broker
         self.deposit = deposit
@@ -83,6 +86,9 @@ class OrderManager:
         self.mode = mode
         self.policy_hash = policy_hash
         self.one_position_per_symbol = one_position_per_symbol
+        self.per_trade_risk_pct = per_trade_risk_pct
+        self.max_leverage_frac = max_leverage_frac
+        self.trailing_buffer_frac = trailing_buffer_frac
         self._pending_entries: dict[tuple[str, int], Order] = {}
         self._pending_protect: dict[str, float] = {}  # symbol -> protect SL while stop works
         self._pending_meta: dict[tuple[str, int], dict] = {}  # entry diagnostics for reconcile
@@ -169,8 +175,11 @@ class OrderManager:
             "long": vote.n_long,
             "short": vote.n_short,
             "flat": vote.n_flat,
+            "none": vote.n_none,
             "dominant": vote.dominant.value,
             "n_total": vote.n_total,
+            "n_voting": vote.n_voting,
+            "n_directional": vote.n_directional,
         }
 
     @staticmethod
@@ -202,11 +211,15 @@ class OrderManager:
         pending = self._pending_entries.get(key)
         meta = self._pending_meta.pop(key, {}) or {}
         trigger = float(meta.get("trigger") or 0.0)
+        already = bool(meta.get("already_through", False))
+        entry_type = meta.get("entry_type") or (
+            "market_through" if already else "stop_limit_filled"
+        )
         market = {
             "source": "reconcile_fill",
-            "entry_type": "stop_limit_filled",
-            "already_through": False,
-            "order_type": "stop_limit",
+            "entry_type": entry_type,
+            "already_through": already,
+            "order_type": "market" if already else "stop_limit",
             "protect_stop": pos.stop_price,
             "mode": self.mode,
             "policy_hash": self.policy_hash,
@@ -237,12 +250,13 @@ class OrderManager:
             policy_hash=self.policy_hash,
         )
         logger.info(
-            "persisted reconciled fill %s %s tf=%s qty=%s @ %s entry_type=stop_limit_filled slip_vs_trig=%s",
+            "persisted reconciled fill %s %s tf=%s qty=%s @ %s entry_type=%s slip_vs_trig=%s",
             pos.side.value,
             pos.symbol,
             pos.tf_min,
             pos.qty,
             pos.entry_price,
+            entry_type,
             market.get("slippage_vs_trigger"),
         )
 
@@ -261,7 +275,13 @@ class OrderManager:
             if prev is None and prev_bars:
                 prev = prev_bars[min(prev_bars.keys())]
             if prev is not None:
-                pos.stop_price = trailing_stop_price(pos.side, prev.low, prev.high)
+                pos.stop_price = trailing_stop_price(
+                    pos.side,
+                    prev.low,
+                    prev.high,
+                    buffer_frac=self.trailing_buffer_frac,
+                    bar_range=prev.range,
+                )
                 self._push_exchange_sl(pos.symbol, pos.stop_price)
 
     def on_signals(
@@ -350,6 +370,8 @@ class OrderManager:
             tracker=self.tracker,
             risk_pct=self.tf_risk_pct,
             max_drawdown_pct=self.max_drawdown_usd / self.deposit if self.deposit else 0.1,
+            per_trade_risk_pct=self.per_trade_risk_pct,
+            max_leverage_frac=self.max_leverage_frac,
         )
         if not pool:
             return
@@ -401,11 +423,11 @@ class OrderManager:
             return
 
         if side == Side.LONG:
-            trigger = alloc.stop_price if alloc.stop_price else prev.high
-            protect = prev.low
+            trigger = alloc.entry_trigger or prev.high
+            protect = alloc.protect_stop or prev.low
         else:
-            trigger = alloc.stop_price if alloc.stop_price else prev.low
-            protect = prev.high
+            trigger = alloc.entry_trigger or prev.low
+            protect = alloc.protect_stop or prev.high
 
         spec = self.instruments.get(sig.symbol)
         qty = spec.round_qty(alloc.qty)

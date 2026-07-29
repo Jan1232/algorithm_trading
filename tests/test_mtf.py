@@ -33,13 +33,16 @@ def test_allocator_equal_risk_not_equal_notional():
         price=100,
         tracker=tracker,
         risk_pct=0.1,
-        max_drawdown_pct=0.10,
+        per_trade_risk_pct=0.02,
     )
     assert len(allocs) == 3
-    # Equal risk budgets
+    # Equal per-trade risk budgets (not split by N)
     assert all(abs(a.risk_usd - allocs[0].risk_usd) < 1e-9 for a in allocs)
+    assert abs(allocs[0].risk_usd - 9000 * 0.02) < 1e-6
     # Same protect distance => same qty
     assert all(abs(a.qty - allocs[0].qty) < 1e-9 for a in allocs)
+    assert all(a.entry_trigger == 105 for a in allocs)
+    assert all(a.protect_stop == 95 for a in allocs)
 
 
 def test_allocator_excludes_risky_tf():
@@ -59,7 +62,7 @@ def test_allocator_excludes_risky_tf():
         price=100,
         tracker=tracker,
         risk_pct=0.05,
-        max_drawdown_pct=0.10,
+        per_trade_risk_pct=0.02,
     )
     assert len(allocs) == 1
     assert allocs[0].signal.tf_min == 30

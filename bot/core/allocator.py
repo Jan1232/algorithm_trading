@@ -11,7 +11,8 @@ class Allocation:
     signal: Signal
     notional_usd: float
     qty: float
-    stop_price: float
+    entry_trigger: float  # breakout extreme of prev bar (entry trigger)
+    protect_stop: float  # protective stop (prev.low LONG / prev.high SHORT)
     risk_usd: float
 
 
@@ -23,17 +24,24 @@ def allocate_by_stop_risk(
     price: float,
     tracker: TfDrawdownTracker,
     risk_pct: float,
-    max_drawdown_pct: float,
+    max_drawdown_pct: float = 0.10,
+    per_trade_risk_pct: float = 0.02,
+    max_leverage_frac: float = 1.0,
 ) -> list[Allocation]:
     """
-    Equal dollar risk-to-stop among eligible TF (not equal notional).
+    Risk-to-stop sizing per eligible TF.
 
-    Each TF gets risk_budget = (deposit * max_drawdown_pct) / N_R.
-    qty = risk_budget / |price - stop|, stop from prev bar extreme.
+    risk_budget = deposit * per_trade_risk_pct (NOT P / N_R).
+    qty = risk_budget / |price - protect_stop|.
+    max_notional = deposit * max_leverage_frac.
+    max_drawdown_pct kept for call-site back-compat; unused for sizing.
     """
+    _ = max_drawdown_pct
     if kind not in (SignalKind.LONG, SignalKind.SHORT):
         return []
     if price <= 0 or deposit <= 0:
+        return []
+    if per_trade_risk_pct <= 0:
         return []
 
     candidates = [s for s in signals if s.kind == kind]
@@ -41,19 +49,19 @@ def allocate_by_stop_risk(
     if not eligible:
         return []
 
-    risk_budget = (deposit * max_drawdown_pct) / len(eligible)
-    max_notional = deposit / len(eligible)
+    risk_budget = deposit * per_trade_risk_pct
+    max_notional = deposit * max_leverage_frac
     out: list[Allocation] = []
     for sig in eligible:
         prev = sig.prev_bar
         if prev is None:
             continue
         if kind == SignalKind.LONG:
-            stop = prev.high
+            trigger = prev.high
             protect = prev.low
             side = Side.LONG
         else:
-            stop = prev.low
+            trigger = prev.low
             protect = prev.high
             side = Side.SHORT
         stop_dist = abs(price - protect)
@@ -61,7 +69,6 @@ def allocate_by_stop_risk(
             continue
         qty = risk_budget / stop_dist
         notional = qty * price
-        # Cap: never exceed equal-share notional (avoids insane size on tiny stops)
         if notional > max_notional:
             qty = max_notional / price
             notional = max_notional
@@ -70,7 +77,8 @@ def allocate_by_stop_risk(
                 signal=sig,
                 notional_usd=notional,
                 qty=qty,
-                stop_price=stop,
+                entry_trigger=trigger,
+                protect_stop=protect,
                 risk_usd=min(risk_budget, abs(price - protect) * qty),
             )
         )
@@ -78,7 +86,6 @@ def allocate_by_stop_risk(
     return out
 
 
-# Back-compat name used by older tests
 def allocate_deposit(
     signals: list[Signal],
     *,
@@ -88,6 +95,8 @@ def allocate_deposit(
     tracker: TfDrawdownTracker,
     risk_pct: float,
     max_drawdown_pct: float = 0.10,
+    per_trade_risk_pct: float = 0.02,
+    max_leverage_frac: float = 1.0,
 ) -> list[Allocation]:
     return allocate_by_stop_risk(
         signals,
@@ -97,4 +106,6 @@ def allocate_deposit(
         tracker=tracker,
         risk_pct=risk_pct,
         max_drawdown_pct=max_drawdown_pct,
+        per_trade_risk_pct=per_trade_risk_pct,
+        max_leverage_frac=max_leverage_frac,
     )

@@ -105,3 +105,38 @@ def promote_to_window_b(root: Path, state: ExperimentState) -> ExperimentState:
     path.write_text(json.dumps(state.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
     logger.info("experiment promoted to window B at %s", now)
     return state
+
+
+def start_fresh_window_b(
+    root: Path,
+    *,
+    policy_hash: str,
+    strategy_label: str,
+    criteria: Optional[PassCriteria] = None,
+    notes: Optional[str] = None,
+) -> ExperimentState:
+    """
+    Overwrite experiment.json for a new window B under a new policy_hash.
+    Caller is responsible for wiping mode-specific SQLite DBs.
+    """
+    path = experiment_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    now = datetime.now(timezone.utc).isoformat()
+    state = ExperimentState(
+        policy_hash=policy_hash,
+        strategy_label=strategy_label,
+        frozen_at=now,
+        window="B",
+        window_a_started_at=now,
+        window_b_started_at=now,
+        criteria=criteria or PassCriteria(),
+        notes=notes
+        or (
+            "Window B (economics pack): TF>=60, per_trade_risk_pct, "
+            "vote>=2/margin>=2, trailing_buffer_frac. "
+            "Goal = economic viability of config, NOT factor attribution / edge."
+        ),
+    )
+    path.write_text(json.dumps(state.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
+    logger.info("experiment FRESH window B policy_hash=%s -> %s", policy_hash, path)
+    return state

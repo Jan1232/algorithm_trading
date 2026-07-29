@@ -31,12 +31,20 @@ class TfDrawdownTracker:
         return self.drawdown(symbol, tf_min) / deposit
 
 
-def trailing_stop_price(side: Side, prev_bar_low: float, prev_bar_high: float) -> float:
-    """Echelon 1: stop on previous bar extreme."""
+def trailing_stop_price(
+    side: Side,
+    prev_bar_low: float,
+    prev_bar_high: float,
+    *,
+    buffer_frac: float = 0.0,
+    bar_range: float = 0.0,
+) -> float:
+    """Echelon 1: stop on previous bar extreme, optionally buffered by bar range."""
+    buf = max(0.0, float(buffer_frac)) * max(0.0, float(bar_range))
     if side == Side.LONG:
-        return prev_bar_low
+        return prev_bar_low - buf
     if side == Side.SHORT:
-        return prev_bar_high
+        return prev_bar_high + buf
     raise ValueError("flat has no stop")
 
 

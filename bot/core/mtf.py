@@ -10,9 +10,18 @@ from bot.models import Bar, Signal, SignalKind, Tick, VoteResult
 class MultiTFEngine:
     """Independent signal copies per timeframe + voting N+/N-/N0."""
 
-    def __init__(self, symbol: str, timeframes_min: list[int]) -> None:
+    def __init__(
+        self,
+        symbol: str,
+        timeframes_min: list[int],
+        *,
+        vote_min_directional: int = 2,
+        vote_min_margin: int = 2,
+    ) -> None:
         self.symbol = symbol
         self.timeframes_min = list(timeframes_min)
+        self.vote_min_directional = vote_min_directional
+        self.vote_min_margin = vote_min_margin
         self.builders = {tf: TickBarBuilder(symbol, tf) for tf in self.timeframes_min}
         self.cores = {tf: SignalCore() for tf in self.timeframes_min}
         self.last_signals: dict[int, Signal] = {}
@@ -35,11 +44,14 @@ class MultiTFEngine:
         return closed_signals
 
     def vote(self) -> VoteResult:
-        result = VoteResult()
+        result = VoteResult(
+            min_directional=self.vote_min_directional,
+            min_margin=self.vote_min_margin,
+        )
         for tf in self.timeframes_min:
             sig = self.last_signals.get(tf)
             if sig is None:
-                result.n_flat += 1
+                result.n_none += 1
                 continue
             result.signals.append(sig)
             if sig.kind == SignalKind.LONG:
@@ -54,5 +66,4 @@ class MultiTFEngine:
         return [s for s in self.last_signals.values() if s.kind == kind]
 
     def get_prev_bar(self, tf_min: int) -> Optional[Bar]:
-        # SignalCore stores current as prev after update; expose last closed bar
         return self.last_bars.get(tf_min)

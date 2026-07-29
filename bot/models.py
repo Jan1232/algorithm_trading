@@ -137,17 +137,36 @@ class ClosedTrade:
 class VoteResult:
     n_long: int = 0
     n_short: int = 0
-    n_flat: int = 0
+    n_flat: int = 0  # explicit FLAT signal only
+    n_none: int = 0  # TF bar not closed yet / no signal
+    min_directional: int = 2
+    min_margin: int = 2
     signals: list[Signal] = field(default_factory=list)
 
     @property
-    def n_total(self) -> int:
+    def n_directional(self) -> int:
+        return self.n_long + self.n_short
+
+    @property
+    def n_voting(self) -> int:
+        """TFs that actually voted (long/short/flat), excluding n_none."""
         return self.n_long + self.n_short + self.n_flat
 
     @property
+    def n_total(self) -> int:
+        return self.n_long + self.n_short + self.n_flat + self.n_none
+
+    @property
     def dominant(self) -> SignalKind:
-        if self.n_long > self.n_short:
+        """Gated majority: need >=min_directional and margin over opposite side."""
+        if (
+            self.n_long >= self.min_directional
+            and (self.n_long - self.n_short) >= self.min_margin
+        ):
             return SignalKind.LONG
-        if self.n_short > self.n_long:
+        if (
+            self.n_short >= self.min_directional
+            and (self.n_short - self.n_long) >= self.min_margin
+        ):
             return SignalKind.SHORT
         return SignalKind.FLAT

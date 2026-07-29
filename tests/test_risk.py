@@ -15,6 +15,7 @@ def test_trailing_stop_and_hit():
     pos = Position("BTCUSDT", Side.LONG, 1, 100, 15, stop_price=90)
     assert stop_hit(pos, 89)
     assert not stop_hit(pos, 91)
+    assert trailing_stop_price(Side.LONG, 90, 110, buffer_frac=0.1, bar_range=20) == 88
 
 
 def test_echelon2_blocks_when_risk_exhausted():

@@ -157,6 +157,9 @@ def build_stack(settings: Settings):
         mode=mode,
         policy_hash=policy,
         one_position_per_symbol=settings.one_position_per_symbol,
+        per_trade_risk_pct=settings.per_trade_risk_pct,
+        max_leverage_frac=settings.max_leverage_frac,
+        trailing_buffer_frac=settings.trailing_buffer_frac,
     )
     # If we rematched after a FLAT already fired, close those positions now
     if mode in ("demo", "live") and settings.exit_mode == "hybrid":

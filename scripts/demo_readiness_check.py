@@ -19,7 +19,11 @@ def main() -> None:
     print("=== CONFIG ===")
     print(f"mode={s.mode} deposit={s.deposit_usd} P_usd={s.max_drawdown_usd} exit={s.exit_mode}")
     print(f"deposit_from_wallet={s.deposit_from_wallet} one_pos={s.one_position_per_symbol}")
-    print(f"reconcile_sec={s.reconcile_sec} db={s.db_path}")
+    print(
+        f"per_trade_risk={s.per_trade_risk_pct} trailing_buf={s.trailing_buffer_frac} "
+        f"vote={s.vote_min_directional}/{s.vote_min_margin}"
+    )
+    print(f"reconcile_sec={s.reconcile_sec} db={s.db_path} policy={s.frozen_policy_hash()}")
     print(f"symbols={s.symbols} tfs={s.timeframes_min}")
 
     store = TradeStore(s.db_path)
@@ -42,7 +46,7 @@ def main() -> None:
         ("SOLUSDT", 75.0, 74.0),
     ):
         signals = []
-        for tf in (15, 30):
+        for tf in (60, 120):
             bar = Bar(sym, tf, price, price * 1.01, prev_low, price * 1.005, 0, 1, 1)
             prev = Bar(sym, tf, price, price * 1.005, prev_low, price, 0, 1, 1)
             signals.append(Signal(SignalKind.LONG, sym, tf, bar, prev, k=0.7, delta=1))
@@ -53,7 +57,8 @@ def main() -> None:
             price=price,
             tracker=tracker,
             risk_pct=s.tf_risk_pct,
-            max_drawdown_pct=s.max_drawdown_pct,
+            per_trade_risk_pct=s.per_trade_risk_pct,
+            max_leverage_frac=s.max_leverage_frac,
         )
         spec = reg.get(sym)
         for a in allocs:

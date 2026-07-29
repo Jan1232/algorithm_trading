@@ -7,21 +7,27 @@ symbols:
 
 category: linear
 
-# Investor risk limits — FROZEN for experiment window A/B (do not tune on Mo)
+# Investor risk limits — FROZEN for experiment window B (do not tune on Mo)
 deposit_usd: 100.0  # fallback; demo/live override from Bybit UNIFIED wallet when enabled
 deposit_from_wallet: true   # demo/live: size from get_wallet_balance (USDT equity)
-max_drawdown_pct: 0.10      # P as fraction of deposit; runtime uses P*deposit USD
+max_drawdown_pct: 0.10      # P — portfolio echelon-2 cap (sum of potential losses)
 tf_risk_pct: 0.10           # R — exclude TF if its drawdown exceeds R
+per_trade_risk_pct: 0.02    # risk-to-stop budget per single trade (NOT P/N_R)
+max_leverage_frac: 1.0      # notional cap = deposit * max_leverage_frac
+
+# Exit / vote policy (window B)
+trailing_buffer_frac: 0.10  # trailing stop buffer as fraction of prev bar range
+vote_min_directional: 2     # min agreeing directional TFs to enter
+vote_min_margin: 2          # min (dir - opposite) margin
 
 # Bybit linear one-way: only one net position per symbol (pick best TF)
 one_position_per_symbol: true
 # Poll pending stop-limit fills + exchange positions
 reconcile_sec: 15
 
-# FROZEN sparse TF grid (interim until PnL correlation prune).
-# NOT the book 15..1440/15=96 set — that overcounts correlated votes on 24/7 crypto.
+# Window B TF grid: no 15/30 (cuts turnover / cost drag)
 # Do not change after experiment start without resetting the experiment.
-timeframes_min: [15, 30, 60, 120, 240, 480, 960, 1440]
+timeframes_min: [60, 120, 240, 480, 960, 1440]
 
 # Legacy fields kept for docs; ignored when timeframes_min is set
 tf_horizon_min: 1440
