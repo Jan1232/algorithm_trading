@@ -30,11 +30,14 @@ def main() -> None:
         policy_hash=policy,
         strategy_label=settings.strategy_label,
     )
+    c = state.criteria
     print(
         f"window={state.window} policy_hash={state.policy_hash} "
         f"tfs={settings.timeframes_min} per_trade_risk={settings.per_trade_risk_pct} "
         f"vote={settings.vote_min_directional}/{settings.vote_min_margin} "
-        f"trailing_buffer={settings.trailing_buffer_frac}"
+        f"trailing_buffer={settings.trailing_buffer_frac} "
+        f"monkey={c.require_monkey_pass}@{c.monkey_beat_threshold}"
+        f"/runs={c.monkey_runs}/seed={c.monkey_seed}"
     )
 
 

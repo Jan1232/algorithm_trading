@@ -97,6 +97,12 @@ class Settings:
             "funding_bps_per_8h": self.costs.funding_bps_per_8h,
             "strategy_label": self.strategy_label,
             "exit_mode": self.exit_mode,
+            # PassCriteria monkey gate (window B protocol) — changing these
+            # invalidates the experiment the same way as economics knobs.
+            "require_monkey_pass": True,
+            "monkey_beat_threshold": 0.90,
+            "monkey_runs": 2000,
+            "monkey_seed": 42,
         }
         raw = json.dumps(payload, sort_keys=True)
         return hashlib.sha256(raw.encode()).hexdigest()[:16]

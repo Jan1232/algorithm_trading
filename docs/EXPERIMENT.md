@@ -15,16 +15,26 @@
 2. `per_trade_risk_pct=0.02` вместо `P / N_R` в сайзинге; `max_leverage_frac=1.0`.
 3. `trailing_buffer_frac=0.10` — буфер trailing к range prev-бара.
 4. Vote gate: `vote_min_directional=2`, `vote_min_margin=2`; `n_none` ≠ flat.
+5. **Monkey gate** (Davey ch.12): baseline должен бить ≥90% случайных аналогов
+   по Mo **и** maxDD во всех трёх режимах (`entry` / `exit` / `both`).
+   Seed фиксируется и пишется в отчёт. Гейт применяется только при
+   `trades_closed >= min_closed_trades` (иначе вердикт — шум, не FAIL).
 
 Цель window B: доказать, что конфигурация **экономически жизнеспособна**
-(Mo>0 after costs при ≥200 закрытых сделках возможно). Не измерять edge
-и не разносить вклад факторов. Walk-forward / изоляция факторов — после
-первого жизнеспособного окна.
+и отличима от случайного входа/выхода на той же статистике сделок.
+Не измерять устойчивость edge во времени (walk-forward — отдельно).
+
+`Mo > 0` само по себе **не** доказывает edge: случайный вход с той же частотой,
+направлением и удержанием мог бы дать такой же Mo. Monkey test отвечает:
+«дал бы случайный вход Mo не хуже — и как часто?»
 
 Сброс и старт B:
 ```bash
 python scripts/start_window_b.py
 ```
+
+Не добавлять monkey-гейт к уже идущему окну задним числом — только вместе
+с новым `policy_hash` / `start_fresh_window_b`.
 
 ## Критерии прохождения (по умолчанию в experiment.json)
 - min_closed_trades >= 200
@@ -32,10 +42,19 @@ python scripts/start_window_b.py
 - >= 70% TF-корзин с положительным Mo
 - maxDD <= P
 - доля блокировок echelon2 в [1%, 50%]
+- monkey gate PASS (entry+exit+both), seed logged; порог 0.90; runs=2000
+
+## Ограничения monkey test
+1. Гейт только при `trades_closed >= min_closed_trades`.
+2. Издержки обезьян = `CostModel` baseline (иначе сравнение нечестное).
+3. Реплей по `close` баров — упрощение; цель = равные условия, не абсолютная точность.
+4. Не доказывает устойчивость edge во времени.
+5. PASS без записанного seed недействителен.
 
 ## Команды
 ```bash
 python -m bot --report
 python -m bot --cabinet
+python -m bot --monkey [--runs 2000] [--seed 42] [--monkey-mode all|entry|exit|both]
 python scripts/start_window_b.py
 ```
