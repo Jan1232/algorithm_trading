@@ -1,0 +1,94 @@
+from __future__ import annotations
+
+import logging
+from typing import Optional
+
+from bot.config import Settings
+from bot.core.liquidity import LiquidityFilter
+from bot.core.mtf import MultiTFEngine
+from bot.models import Tick
+from bot.orders.manager import OrderManager
+from bot.storage.db import TradeStore
+
+logger = logging.getLogger(__name__)
+
+
+class SymbolWorker:
+    def __init__(
+        self,
+        symbol: str,
+        settings: Settings,
+        order_manager: OrderManager,
+        liquidity: LiquidityFilter,
+        store: Optional[TradeStore] = None,
+    ) -> None:
+        self.symbol = symbol
+        self.settings = settings
+        self.mtf = MultiTFEngine(symbol, settings.timeframes_min)
+        self.order_manager = order_manager
+        self.liquidity = liquidity
+        self.store = store
+        self.last_price: Optional[float] = None
+
+    def on_tick(self, tick: Tick) -> None:
+        self.liquidity.on_tick(tick)
+        self.last_price = tick.price
+        self.order_manager.broker.mark_price(tick.symbol, tick.price)
+        self.order_manager.on_price(tick.symbol, tick.price, self.mtf.last_bars)
+
+        closed = self.mtf.on_tick(tick)
+        if not closed:
+            return
+
+        vote = self.mtf.vote()
+        signal_ids: dict[int, int] = {}
+        for sig in closed:
+            # Persist closed bar + signal evaluation (rules 1–3 with checks)
+            bar = self.mtf.last_bars.get(sig.tf_min)
+            if self.store is not None:
+                if bar is not None:
+                    self.store.save_bar(bar)
+                sid = self.store.save_signal(sig, vote, mode=self.settings.mode)
+                signal_ids[sig.tf_min] = sid
+            logger.info(
+                "signal %s %s tf=%s | %s | vote L=%d S=%d F=%d",
+                sig.kind.value,
+                sig.symbol,
+                sig.tf_min,
+                sig.reason,
+                vote.n_long,
+                vote.n_short,
+                vote.n_flat,
+            )
+
+        self.order_manager.on_signals(
+            symbol=tick.symbol,
+            price=tick.price,
+            signals=closed,
+            vote=vote,
+            prev_bars=self.mtf.last_bars,
+            signal_ids=signal_ids,
+        )
+
+
+class Portfolio:
+    def __init__(
+        self,
+        settings: Settings,
+        order_manager: OrderManager,
+        store: Optional[TradeStore] = None,
+    ) -> None:
+        self.settings = settings
+        self.order_manager = order_manager
+        self.store = store
+        self.liquidity = LiquidityFilter(settings.min_ticks_per_sec)
+        self.workers = {
+            sym: SymbolWorker(sym, settings, order_manager, self.liquidity, store)
+            for sym in settings.symbols
+        }
+
+    def on_tick(self, tick: Tick) -> None:
+        worker = self.workers.get(tick.symbol)
+        if worker is None:
+            return
+        worker.on_tick(tick)

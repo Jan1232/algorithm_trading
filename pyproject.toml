@@ -1,0 +1,23 @@
+[project]
+name = "bybit-chebotarev-bot"
+version = "0.1.0"
+description = "Parameter-free trading robot for Bybit (Chebotarev core)"
+requires-python = ">=3.11"
+dependencies = [
+  "pybit>=5.8.0",
+  "PyYAML>=6.0",
+  "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0"]
+
+[project.scripts]
+trade-bot = "bot.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["bot*"]

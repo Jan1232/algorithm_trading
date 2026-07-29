@@ -1,0 +1,5 @@
+pybit>=5.8.0
+PyYAML>=6.0
+python-dotenv>=1.0.0
+pytest>=8.0.0
+fpdf2>=2.7.0
