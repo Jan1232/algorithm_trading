@@ -50,6 +50,9 @@ class Settings:
     orderflow_collect: bool = False
     orderflow_tf_min: list[int] = field(default_factory=list)
     orderflow_price_bucket_bps: float = 1.0
+    # Approximate in-progress bar restore from REST kline after restart.
+    # NOT in frozen_policy_hash. Default OFF — Part A (prev from DB) is always on.
+    restore_partial_from_kline: bool = False
     min_ticks_per_sec: float = 0.1
     log_level: str = "INFO"
     paper_replay_ticks: int = 5000
@@ -185,6 +188,7 @@ def load_settings(
         orderflow_collect=bool(raw.get("orderflow_collect", False)),
         orderflow_tf_min=orderflow_tfs,
         orderflow_price_bucket_bps=float(raw.get("orderflow_price_bucket_bps", 1.0)),
+        restore_partial_from_kline=bool(raw.get("restore_partial_from_kline", False)),
         min_ticks_per_sec=float(raw.get("min_ticks_per_sec", 0.1)),
         log_level=str(raw.get("log_level", "INFO")),
         paper_replay_ticks=int(raw.get("paper_replay_ticks", 5000)),

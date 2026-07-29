@@ -9,6 +9,69 @@ from bot.models import Tick
 
 logger = logging.getLogger(__name__)
 
+# Native Bybit v5 kline intervals for our TFs.
+# 480 / 960 are NOT supported by Bybit — Part B skips those (ticks only).
+BYBIT_KLINE_INTERVAL: dict[int, str] = {
+    1: "1",
+    3: "3",
+    5: "5",
+    15: "15",
+    30: "30",
+    60: "60",
+    120: "120",
+    240: "240",
+    360: "360",
+    720: "720",
+    1440: "D",
+}
+
+
+def tf_to_bybit_interval(tf_min: int) -> Optional[str]:
+    return BYBIT_KLINE_INTERVAL.get(tf_min)
+
+
+def fetch_current_kline(
+    symbol: str,
+    tf_min: int,
+    *,
+    category: str = "linear",
+    testnet: bool = False,
+) -> Optional[dict]:
+    """
+    Public REST current (forming) kline for approximate partial-bar restore.
+    Returns dict with open/high/low/close/start_ts_ms, or None if TF unsupported / error.
+    """
+    interval = tf_to_bybit_interval(tf_min)
+    if interval is None:
+        return None
+    try:
+        from pybit.unified_trading import HTTP
+
+        http = HTTP(testnet=testnet)
+        resp = http.get_kline(
+            category=category,
+            symbol=symbol,
+            interval=interval,
+            limit=2,
+        )
+        rows = ((resp.get("result") or {}).get("list")) or []
+        if not rows:
+            return None
+        # Bybit returns newest first; [0] is the currently forming candle.
+        row = rows[0]
+        return {
+            "open": float(row[1]),
+            "high": float(row[2]),
+            "low": float(row[3]),
+            "close": float(row[4]),
+            "start_ts_ms": int(row[0]),
+        }
+    except Exception:
+        logger.exception(
+            "fetch_current_kline failed symbol=%s tf=%s", symbol, tf_min
+        )
+        return None
+
 
 class PublicTradeFeed:
     """

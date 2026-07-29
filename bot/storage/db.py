@@ -10,6 +10,20 @@ from typing import Any, Optional
 from bot.models import Bar, ClosedTrade, Signal, VoteResult
 
 
+def _row_to_bar(row: sqlite3.Row) -> Bar:
+    return Bar(
+        symbol=row["symbol"],
+        tf_min=int(row["tf_min"]),
+        open=float(row["open"]),
+        high=float(row["high"]),
+        low=float(row["low"]),
+        close=float(row["close"]),
+        start_ts_ms=int(row["start_ts_ms"]),
+        end_ts_ms=int(row["end_ts_ms"]),
+        tick_count=int(row["tick_count"]),
+    )
+
+
 class TradeStore:
     """SQLite store for bars, signals (with rule reasons), and trade results."""
 
@@ -178,6 +192,22 @@ class TradeStore:
                 ),
             )
             self._conn.commit()
+
+    def last_bar(self, symbol: str, tf_min: int) -> Optional[Bar]:
+        """Latest closed bar for (symbol, tf) — used to restore SignalCore._prev."""
+        with self._lock:
+            row = self._conn.execute(
+                """
+                SELECT symbol, tf_min, open, high, low, close,
+                       start_ts_ms, end_ts_ms, tick_count
+                FROM bars
+                WHERE symbol=? AND tf_min=?
+                ORDER BY start_ts_ms DESC
+                LIMIT 1
+                """,
+                (symbol, tf_min),
+            ).fetchone()
+        return _row_to_bar(row) if row else None
 
     def save_shadow_bar(self, bar: Bar) -> None:
         """Persist a non-trading diagnostic bar (1m/5m shadow collectors)."""

@@ -54,6 +54,36 @@ class TickBarBuilder:
         self._tick_count = 0
         return bar
 
+    def seed_partial(
+        self,
+        *,
+        open_: float,
+        high: float,
+        low: float,
+        close: float,
+        start_ts_ms: int,
+        tick_count: int = 0,
+        now_ms: Optional[int] = None,
+    ) -> bool:
+        """
+        Approximate restore of an in-progress bar (e.g. from REST kline).
+
+        Only seeds when the builder is empty. If now_ms is given, start_ts_ms
+        must match the current bucket — otherwise refuse (avoid mixing buckets).
+        Returns True if state was seeded.
+        """
+        if self._start_ts_ms is not None:
+            return False
+        if now_ms is not None and self._bucket_start(now_ms) != start_ts_ms:
+            return False
+        self._open = open_
+        self._high = high
+        self._low = low
+        self._close = close
+        self._start_ts_ms = start_ts_ms
+        self._tick_count = tick_count
+        return True
+
     def on_tick(self, tick: Tick) -> Optional[Bar]:
         if tick.symbol != self.symbol:
             raise ValueError(f"tick symbol {tick.symbol} != builder {self.symbol}")

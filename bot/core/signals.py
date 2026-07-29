@@ -173,5 +173,9 @@ class SignalCore:
             return None
         return evaluate_signal(bar, prev)
 
+    def seed_prev(self, bar: Bar) -> None:
+        """Restore previous closed bar after process restart (exact, from DB)."""
+        self._prev[(bar.symbol, bar.tf_min)] = bar
+
     def reset(self) -> None:
         self._prev.clear()

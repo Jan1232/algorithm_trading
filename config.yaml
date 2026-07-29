@@ -38,6 +38,10 @@ orderflow_collect: true
 orderflow_tf_min: [60, 240]
 orderflow_price_bucket_bps: 1.0
 
+# Restart state recovery (NO-HASH). Part A (prev from DB) always on.
+# Part B: seed in-progress bars from Bybit kline (approx; native TFs only: 60/120/240/1440).
+restore_partial_from_kline: false
+
 # Legacy fields kept for docs; ignored when timeframes_min is set
 tf_horizon_min: 1440
 tf_step_min: 15

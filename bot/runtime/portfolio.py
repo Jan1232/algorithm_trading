@@ -53,6 +53,20 @@ class SymbolWorker:
             )
             for tf in of_tfs
         }
+        # Restart recovery: seed SignalCore._prev from DB (exact);
+        # optional approximate partial bars from REST kline (flag, default OFF).
+        if store is not None:
+            fetch = None
+            if settings.restore_partial_from_kline:
+                from bot.exchange.market_data import fetch_current_kline
+
+                cat = settings.category
+                tn = settings.bybit_testnet
+                fetch = lambda sym, tf: fetch_current_kline(
+                    sym, tf, category=cat, testnet=tn
+                )
+            stats = self.mtf.restore(store, fetch_kline=fetch)
+            logger.info("mtf restore %s %s", symbol, stats)
 
     def on_tick(self, tick: Tick) -> None:
         # Shadow first: pure bar persistence, zero trading side-effects.

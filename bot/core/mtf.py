@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Optional
+import time
+from typing import Any, Callable, Optional
 
 from bot.core.bars import TickBarBuilder
 from bot.core.signals import SignalCore
@@ -26,6 +27,48 @@ class MultiTFEngine:
         self.cores = {tf: SignalCore() for tf in self.timeframes_min}
         self.last_signals: dict[int, Signal] = {}
         self.last_bars: dict[int, Bar] = {}
+
+    def restore(
+        self,
+        store: Any,
+        *,
+        fetch_kline: Optional[Callable[[str, int], Optional[dict]]] = None,
+        now_ms: Optional[int] = None,
+    ) -> dict[str, int]:
+        """
+        Restore process state after restart.
+
+        Part A (always): seed SignalCore._prev + last_bars from closed bars in DB.
+        Part B (optional): seed in-progress TickBarBuilder from REST kline via fetch_kline.
+        """
+        now = now_ms if now_ms is not None else int(time.time() * 1000)
+        stats = {"prev_seeded": 0, "partial_seeded": 0, "partial_skipped": 0}
+        for tf in self.timeframes_min:
+            last = store.last_bar(self.symbol, tf)
+            if last is not None:
+                self.cores[tf].seed_prev(last)
+                self.last_bars[tf] = last
+                stats["prev_seeded"] += 1
+            if fetch_kline is None:
+                continue
+            candle = fetch_kline(self.symbol, tf)
+            if candle is None:
+                stats["partial_skipped"] += 1
+                continue
+            ok = self.builders[tf].seed_partial(
+                open_=float(candle["open"]),
+                high=float(candle["high"]),
+                low=float(candle["low"]),
+                close=float(candle["close"]),
+                start_ts_ms=int(candle["start_ts_ms"]),
+                tick_count=int(candle.get("tick_count") or 0),
+                now_ms=now,
+            )
+            if ok:
+                stats["partial_seeded"] += 1
+            else:
+                stats["partial_skipped"] += 1
+        return stats
 
     def on_tick(self, tick: Tick) -> list[Signal]:
         if tick.symbol != self.symbol:
