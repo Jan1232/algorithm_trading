@@ -4,6 +4,7 @@ import logging
 from typing import Optional
 
 from bot.config import Settings
+from bot.core.bars import TickBarBuilder
 from bot.core.liquidity import LiquidityFilter
 from bot.core.mtf import MultiTFEngine
 from bot.models import Tick
@@ -34,8 +35,18 @@ class SymbolWorker:
         self.liquidity = liquidity
         self.store = store
         self.last_price: Optional[float] = None
+        # Record-only short-TF collectors — never feed SignalCore / vote / allocator.
+        self.shadow_builders = {
+            tf: TickBarBuilder(symbol, tf) for tf in (settings.shadow_timeframes_min or [])
+        }
 
     def on_tick(self, tick: Tick) -> None:
+        # Shadow first: pure bar persistence, zero trading side-effects.
+        for _tf, builder in self.shadow_builders.items():
+            closed_shadow = builder.on_tick(tick)
+            if closed_shadow is not None and self.store is not None:
+                self.store.save_shadow_bar(closed_shadow)
+
         self.liquidity.on_tick(tick)
         self.last_price = tick.price
         self.order_manager.broker.mark_price(tick.symbol, tick.price)

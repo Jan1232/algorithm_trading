@@ -29,6 +29,9 @@ reconcile_sec: 15
 # Do not change after experiment start without resetting the experiment.
 timeframes_min: [60, 120, 240, 480, 960, 1440]
 
+# Shadow collectors (record-only, NO trading, NOT in policy_hash)
+shadow_timeframes_min: [1, 5]
+
 # Legacy fields kept for docs; ignored when timeframes_min is set
 tf_horizon_min: 1440
 tf_step_min: 15

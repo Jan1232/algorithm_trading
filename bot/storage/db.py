@@ -47,6 +47,20 @@ class TradeStore:
                     UNIQUE(symbol, tf_min, start_ts_ms)
                 );
 
+                CREATE TABLE IF NOT EXISTS shadow_bars (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    symbol TEXT NOT NULL,
+                    tf_min INTEGER NOT NULL,
+                    open REAL NOT NULL,
+                    high REAL NOT NULL,
+                    low REAL NOT NULL,
+                    close REAL NOT NULL,
+                    start_ts_ms INTEGER NOT NULL,
+                    end_ts_ms INTEGER NOT NULL,
+                    tick_count INTEGER NOT NULL,
+                    UNIQUE(symbol, tf_min, start_ts_ms)
+                );
+
                 CREATE TABLE IF NOT EXISTS signals (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     ts_ms INTEGER NOT NULL,
@@ -101,6 +115,7 @@ class TradeStore:
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_bars_sym_tf ON bars(symbol, tf_min, start_ts_ms);
+                CREATE INDEX IF NOT EXISTS idx_shadow_bars_sym_tf ON shadow_bars(symbol, tf_min, start_ts_ms);
                 CREATE INDEX IF NOT EXISTS idx_signals_sym ON signals(symbol, ts_ms);
                 CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status, symbol);
                 CREATE INDEX IF NOT EXISTS idx_events_kind ON events(kind, ts_ms);
@@ -120,6 +135,30 @@ class TradeStore:
             self._conn.execute(
                 """
                 INSERT OR REPLACE INTO bars(
+                    symbol, tf_min, open, high, low, close,
+                    start_ts_ms, end_ts_ms, tick_count
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    bar.symbol,
+                    bar.tf_min,
+                    bar.open,
+                    bar.high,
+                    bar.low,
+                    bar.close,
+                    bar.start_ts_ms,
+                    bar.end_ts_ms,
+                    bar.tick_count,
+                ),
+            )
+            self._conn.commit()
+
+    def save_shadow_bar(self, bar: Bar) -> None:
+        """Persist a non-trading diagnostic bar (1m/5m shadow collectors)."""
+        with self._lock:
+            self._conn.execute(
+                """
+                INSERT OR REPLACE INTO shadow_bars(
                     symbol, tf_min, open, high, low, close,
                     start_ts_ms, end_ts_ms, tick_count
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)

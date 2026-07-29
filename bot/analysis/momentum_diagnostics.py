@@ -15,6 +15,7 @@ import json
 import math
 import sqlite3
 from dataclasses import asdict, dataclass
+from bot.core.costs import CostModel
 from pathlib import Path
 from typing import Any, Optional, Sequence
 
@@ -252,19 +253,28 @@ def _classify(
     return "random_walk"
 
 
+_ALLOWED_BAR_TABLES = frozenset({"bars", "shadow_bars"})
+
+
 def diagnose(
     db_path: str | Path,
     *,
     policy_hash: Optional[str] = None,
+    table: str = "bars",
     vr_horizons: Sequence[int] = (2, 4, 8, 16),
     lookback_bars: int = 8,
     hold_bars: int = 4,
 ) -> dict[str, Any]:
     """
-    Per (symbol, tf) diagnostics. ``policy_hash`` reserved for future trade
-    filtering; bars table has no policy column — currently unused.
+    Per (symbol, tf) diagnostics.
+
+    ``table`` must be ``bars`` (trading experiment) or ``shadow_bars``
+    (record-only short TF collectors). Arbitrary names are rejected.
     """
     _ = policy_hash
+    if table not in _ALLOWED_BAR_TABLES:
+        raise ValueError(f"table must be one of {sorted(_ALLOWED_BAR_TABLES)}, got {table!r}")
+
     path = Path(db_path)
     if not path.exists():
         return {
@@ -272,24 +282,30 @@ def diagnose(
             "error": f"database not found: {path}",
             "params": {},
             "cells": [],
+            "table": table,
         }
 
     conn = sqlite3.connect(str(path))
     try:
-        has_bars = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='bars'"
+        has_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            (table,),
         ).fetchone()
-        if not has_bars:
+        if not has_table:
             return {
                 "n_cells": 0,
-                "error": "no bars table — no recorded bars yet (run demo/paper to accumulate)",
+                "error": (
+                    f"no {table} table — no recorded bars yet "
+                    f"(run demo with collectors enabled)"
+                ),
                 "params": {},
                 "cells": [],
+                "table": table,
             }
         rows = conn.execute(
-            """
+            f"""
             SELECT symbol, tf_min, close, start_ts_ms
-            FROM bars
+            FROM {table}
             ORDER BY symbol, tf_min, start_ts_ms ASC
             """
         ).fetchall()
@@ -331,6 +347,7 @@ def diagnose(
 
     return {
         "n_cells": len(cells),
+        "table": table,
         "params": {
             "hurst_on": "log_returns_RS",
             "vr_horizons": list(vr_horizons),
@@ -344,6 +361,122 @@ def diagnose(
         },
         "cells": [asdict(c) for c in cells],
     }
+
+
+def _median(xs: Sequence[float]) -> float:
+    if not xs:
+        return float("nan")
+    s = sorted(xs)
+    n = len(s)
+    mid = n // 2
+    if n % 2:
+        return s[mid]
+    return 0.5 * (s[mid - 1] + s[mid])
+
+
+def shadow_costs_viability(
+    db_path: str | Path,
+    costs: CostModel,
+    *,
+    table: str = "shadow_bars",
+    viable_ratio_min: float = 2.0,
+) -> dict[str, Any]:
+    """
+    Cheap structural check: median bar move (bps) vs round-trip cost (bps).
+
+    If median_move_bps / rt_cost_bps < viable_ratio_min, breakout on that TF
+    is structurally unviable (move does not cover costs with margin).
+    """
+    if table not in _ALLOWED_BAR_TABLES:
+        raise ValueError(f"table must be one of {sorted(_ALLOWED_BAR_TABLES)}, got {table!r}")
+
+    path = Path(db_path)
+    if not path.exists():
+        return {"rows": [], "error": f"database not found: {path}"}
+
+    conn = sqlite3.connect(str(path))
+    try:
+        has_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            (table,),
+        ).fetchone()
+        if not has_table:
+            return {"rows": [], "error": f"no {table} table"}
+        rows = conn.execute(
+            f"""
+            SELECT symbol, tf_min, open, high, low, close
+            FROM {table}
+            ORDER BY symbol, tf_min, start_ts_ms
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+
+    buckets: dict[tuple[str, int], list[tuple[float, float, float, float]]] = {}
+    for symbol, tf_min, o, h, lo, c in rows:
+        key = (symbol, int(tf_min))
+        buckets.setdefault(key, []).append((float(o), float(h), float(lo), float(c)))
+
+    # Round-trip cost in bps of notional (independent of qty/price scale)
+    fee_bps = 2.0 * costs.taker_fee_bps
+    slip_bps = 2.0 * costs.slippage_bps
+
+    out_rows: list[dict[str, Any]] = []
+    for (symbol, tf_min), ohlc in sorted(buckets.items()):
+        body_bps = []
+        range_bps = []
+        for o, h, lo, c in ohlc:
+            mid = abs(o) if abs(o) > 0 else abs(c)
+            if mid <= 0:
+                continue
+            body_bps.append(abs(c - o) / mid * 10_000.0)
+            range_bps.append(abs(h - lo) / mid * 10_000.0)
+        hold_hours = tf_min / 60.0
+        funding_bps = costs.funding_bps_per_8h * (hold_hours / 8.0)
+        rt_cost_bps = fee_bps + slip_bps + funding_bps
+        med_body = _median(body_bps)
+        med_range = _median(range_bps)
+        # Primary viability uses body |close-open|; range reported for context
+        ratio = (med_body / rt_cost_bps) if rt_cost_bps > 0 else float("nan")
+        out_rows.append(
+            {
+                "symbol": symbol,
+                "tf_min": tf_min,
+                "n_bars": len(ohlc),
+                "median_body_bps": med_body,
+                "median_range_bps": med_range,
+                "round_trip_cost_bps": rt_cost_bps,
+                "ratio_body_over_cost": ratio,
+                "viable": (not math.isnan(ratio)) and ratio >= viable_ratio_min,
+            }
+        )
+
+    return {
+        "table": table,
+        "viable_ratio_min": viable_ratio_min,
+        "rows": out_rows,
+    }
+
+
+def format_costs_table(payload: dict[str, Any]) -> str:
+    if payload.get("error"):
+        return f"SHADOW COSTS: ERROR: {payload['error']}"
+    lines = [
+        "SHADOW COSTS VIABILITY (informational; not a pass criterion)",
+        f"  viable if median_|close-open|_bps / rt_cost_bps >= "
+        f"{payload.get('viable_ratio_min', 2.0)}",
+        "  symbol     tf  n_bars  med_body_bps  med_range_bps  rt_cost_bps  ratio  viable",
+    ]
+    for r in payload.get("rows") or []:
+        lines.append(
+            f"  {r['symbol']:<10}{r['tf_min']:>3}  {r['n_bars']:>6}  "
+            f"{r['median_body_bps']:12.2f}  {r['median_range_bps']:13.2f}  "
+            f"{r['round_trip_cost_bps']:11.2f}  {r['ratio_body_over_cost']:5.2f}  "
+            f"{'YES' if r['viable'] else 'NO'}"
+        )
+    if not payload.get("rows"):
+        lines.append("  (no shadow bars yet)")
+    return "\n".join(lines)
 
 
 def format_diag_table(payload: dict[str, Any]) -> str:
@@ -378,14 +511,28 @@ def print_momentum_diag(
     *,
     json_path: str | Path | None = None,
     policy_hash: Optional[str] = None,
+    table: str = "bars",
+    costs: Optional[CostModel] = None,
 ) -> dict[str, Any]:
-    payload = diagnose(db_path, policy_hash=policy_hash)
+    payload = diagnose(db_path, policy_hash=policy_hash, table=table)
     text = format_diag_table(payload)
     print(text)
+    costs_payload = None
+    if table == "shadow_bars":
+        costs_payload = shadow_costs_viability(
+            db_path, costs or CostModel(), table=table
+        )
+        costs_text = format_costs_table(costs_payload)
+        print(costs_text)
     if json_path is not None:
         path = Path(json_path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        out = {**payload, "report_text": text, "policy_hash": policy_hash}
+        out = {
+            **payload,
+            "report_text": text,
+            "policy_hash": policy_hash,
+            "costs": costs_payload,
+        }
         path.write_text(json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")
         print(f"wrote {path}")
     return payload

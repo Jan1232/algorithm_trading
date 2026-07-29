@@ -45,6 +45,11 @@ def main(argv: list[str] | None = None) -> None:
         help="Run Hurst/VR/lag-corr momentum diagnostics (offline) and exit",
     )
     parser.add_argument(
+        "--shadow",
+        action="store_true",
+        help="With --momentum-diag: read shadow_bars + print costs viability",
+    )
+    parser.add_argument(
         "--runs",
         type=int,
         default=2000,
@@ -139,10 +144,14 @@ def main(argv: list[str] | None = None) -> None:
             policy_hash=policy,
             strategy_label=settings.strategy_label,
         )
+        table = "shadow_bars" if args.shadow else "bars"
+        out_name = "momentum_diag_shadow.json" if args.shadow else "momentum_diag.json"
         print_momentum_diag(
             settings.db_path,
-            json_path=root / "data" / "momentum_diag.json",
+            json_path=root / "data" / out_name,
             policy_hash=state.policy_hash,
+            table=table,
+            costs=settings.costs,
         )
         return
 

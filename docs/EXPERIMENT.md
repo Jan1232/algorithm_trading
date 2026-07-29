@@ -78,6 +78,14 @@ Calmar ratio в `--report` — **только informational**, не pass-criteri
 `python -m bot --momentum-diag` → Hurst (log-returns R/S) + Variance Ratio +
 лаговая corr на неперекрывающихся окнах по каждой ячейке symbol×tf.
 Результат — `data/momentum_diag.json`. **Не меняет config / hash.**
+
+Теневой сбор коротких ТФ (record-only): `shadow_timeframes_min: [1, 5]` пишет
+в `shadow_bars` (не в `bars`), без сигналов/ордеров. Диагностика:
+`python -m bot --momentum-diag --shadow` → `data/momentum_diag_shadow.json`
++ costs-арифметика (median move bps / RT cost bps). **НЕ в policy_hash.**
+Живую торговлю на 1/5m не запускать, пока диагностика + costs не зелёные;
+это вход для будущего `[NEW-HASH]` окна, не для текущего window B.
+
 Перекрёстная валидация с monkey:
 - Hurst<0.5 + fail `monkey_entry` → согласованное свидетельство против bar-momentum;
 - Hurst>0.5 + PASS `monkey_entry` → предпосылка подтверждена независимо от Chan.
@@ -109,5 +117,6 @@ python -m bot --report
 python -m bot --cabinet
 python -m bot --monkey [--runs 2000] [--seed 42] [--monkey-mode all|entry|exit|both]
 python -m bot --momentum-diag
+python -m bot --momentum-diag --shadow
 python scripts/start_window_b.py
 ```

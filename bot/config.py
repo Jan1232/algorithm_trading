@@ -44,6 +44,8 @@ class Settings:
     tf_horizon_min: int = 1440
     tf_step_min: int = 15
     timeframes_explicit: list[int] = field(default_factory=list)
+    # Shadow TF collectors (record-only). NOT in frozen_policy_hash.
+    shadow_timeframes_min: list[int] = field(default_factory=list)
     min_ticks_per_sec: float = 0.1
     log_level: str = "INFO"
     paper_replay_ticks: int = 5000
@@ -143,6 +145,8 @@ def load_settings(
 
     tfs = raw.get("timeframes_min")
     explicit = [int(x) for x in tfs] if isinstance(tfs, list) else []
+    shadow_raw = raw.get("shadow_timeframes_min")
+    shadow_tfs = [int(x) for x in shadow_raw] if isinstance(shadow_raw, list) else []
 
     costs = CostModel(
         taker_fee_bps=float(raw.get("taker_fee_bps", 5.5)),
@@ -171,6 +175,7 @@ def load_settings(
         tf_horizon_min=int(raw.get("tf_horizon_min", 1440)),
         tf_step_min=int(raw.get("tf_step_min", 15)),
         timeframes_explicit=explicit,
+        shadow_timeframes_min=shadow_tfs,
         min_ticks_per_sec=float(raw.get("min_ticks_per_sec", 0.1)),
         log_level=str(raw.get("log_level", "INFO")),
         paper_replay_ticks=int(raw.get("paper_replay_ticks", 5000)),
