@@ -11,6 +11,8 @@
 
 ## Window B — economics pack (один policy_hash)
 
+Текущий freeze id: **`policy_hash=3eddb8d58eff91d6`**.
+
 Состав пакета (факторы **не атрибутируются** по отдельности):
 1. TF grid без 15/30: `[60, 120, 240, 480, 960, 1440]` — снижение оборота.
 2. `per_trade_risk_pct=0.02` вместо `P / N_R` в сайзинге; `max_leverage_frac=1.0`.
@@ -53,12 +55,16 @@ python scripts/start_window_b.py
 После `per_trade_risk_pct` block rate структурно ≈ 0% и больше не информативен.
 Поле `echelon2_block_rate_gate_enabled=false` (логирование полей сохранено).
 
+Calmar ratio в `--report` — **только informational**, не pass-criterion.
+
 ## Ограничения monkey test
 1. Гейт только при `trades_closed >= min_closed_trades`.
 2. Издержки обезьян = `CostModel` baseline (иначе сравнение нечестное).
 3. Реплей по `close` баров — упрощение; цель = равные условия, не абсолютная точность.
 4. Не доказывает устойчивость edge во времени.
 5. PASS без записанного seed недействителен.
+6. Baseline-сделки из journal (live-путь), НЕ параллельный SignalCore-реплей.
+7. `monkey_exit` сохраняет реальный `entry_price` baseline; варьируется только выход.
 
 ## Интерпретация режимов (entry / exit / both)
 
@@ -67,19 +73,41 @@ python scripts/start_window_b.py
 - падает `monkey_entry`, `monkey_exit` проходит → проблема во входе (сигналы/vote);
 - падает `monkey_both` при прохождении обоих одиночных → edge в комбинации/взаимодействии.
 
-## Отложенные усиления monkey (после ≥200 сделок в окне)
+## Momentum-диагностика (NO-HASH, сейчас)
 
-Не внедрять до первого вердикта гейта:
-1. **Per-TF monkey** (приоритет): PASS корзин ≥ порога при `min_trades_per_basket`; тонкие корзины = `insufficient_data`.
-2. **Эмпирический hold** вместо mean (квантили p25/p50/p75 в отчёте).
-3. **Walk-forward поверх monkey** — только после нескольких временных окон.
+`python -m bot --momentum-diag` → Hurst (log-returns R/S) + Variance Ratio +
+лаговая corr на неперекрывающихся окнах по каждой ячейке symbol×tf.
+Результат — `data/momentum_diag.json`. **Не меняет config / hash.**
+Перекрёстная валидация с monkey:
+- Hurst<0.5 + fail `monkey_entry` → согласованное свидетельство против bar-momentum;
+- Hurst>0.5 + PASS `monkey_entry` → предпосылка подтверждена независимо от Chan.
 
-Cooldown / min-hold — отдельное ТЗ на торговое поведение, не часть monkey.
+## POST-200 / NEW-HASH (не трогать до ≥200 сделок + вердикта гейта)
+
+Зафиксированные методы/гипотезы (чтобы не потерять и не обсуждать заново):
+
+1. **H-exit** (триггер: fail `monkey_exit`): в отдельном окне сравнить
+   - H-exit-A: калибровка `trailing_buffer_frac` от баров;
+   - H-exit-B: убрать trailing, выход только rule3 FLAT (`book_close` / `rule3_only`).
+   Обе `[NEW-HASH]`.
+2. **Kill-порог** `max_daily_loss_pct`: калибровка от эмпирических дневных ходов
+   (учёт kurtosis крипты), между окнами, не внутри замера.
+3. **Реакция на momentum-diag**: срез TF / смена класса (MR или order-flow) —
+   только по данным, отдельные окна `[NEW-HASH]`.
+4. **Order flow edge** — дальний горизонт, если bar-momentum мёртв.
+5. **Усиления monkey**: per-TF monkey; эмпирический hold (p25/p50/p75);
+   walk-forward + t-тест OOS-vs-IS; Calmar≥1 как приёмка на стадии live;
+   Kelly/half-Kelly как верхняя граница плеча (не таргет; без constant-leverage
+   rebalancing на непроверенном edge).
+
+Отклонено сейчас: ARIMA/Bollinger/OU (MR-класс), ML на midprice, Kelly/Markowitz
+аллокация на <200 сделок, cross-exchange arb, news-momentum.
 
 ## Команды
 ```bash
 python -m bot --report
 python -m bot --cabinet
 python -m bot --monkey [--runs 2000] [--seed 42] [--monkey-mode all|entry|exit|both]
+python -m bot --momentum-diag
 python scripts/start_window_b.py
 ```

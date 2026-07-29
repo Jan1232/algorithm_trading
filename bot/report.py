@@ -16,6 +16,59 @@ from bot.storage.db import TradeStore
 logger = logging.getLogger(__name__)
 
 
+def max_drawdown_from_pnls(pnls: list[float]) -> float:
+    equity = 0.0
+    peak = 0.0
+    max_dd = 0.0
+    for p in pnls:
+        equity += p
+        if equity > peak:
+            peak = equity
+        dd = peak - equity
+        if dd > max_dd:
+            max_dd = dd
+    return max_dd
+
+
+def calmar_ratio_from_trades(trades: list[ClosedTrade]) -> float:
+    """
+    Approximate Calmar = CAGR / |maxDD| from closed-trade equity.
+
+    Informational only — NOT a PassCriteria gate. Sensitive to short samples.
+    """
+    if not trades:
+        return 0.0
+    ordered = sorted(trades, key=lambda t: t.closed_ts_ms or 0)
+    pnls: list[float] = []
+    for t in ordered:
+        if t.side == Side.LONG:
+            gross = (t.exit_price - t.entry_price) * t.qty
+        else:
+            gross = (t.entry_price - t.exit_price) * t.qty
+        pnls.append(gross - t.costs_usd)
+    total = sum(pnls)
+    max_dd = max_drawdown_from_pnls(pnls)
+    if max_dd <= 0:
+        return float("inf") if total > 0 else 0.0
+    t0 = ordered[0].opened_ts_ms or ordered[0].closed_ts_ms
+    t1 = ordered[-1].closed_ts_ms or ordered[-1].opened_ts_ms
+    years = max((t1 - t0) / (365.25 * 24 * 3_600_000), 1.0 / 365.25)
+    equity_curve = []
+    e = 0.0
+    for p in pnls:
+        e += p
+        equity_curve.append(e)
+    start_cap = max(abs(min(equity_curve + [0.0])), abs(total), 1.0)
+    end_cap = start_cap + total
+    if end_cap <= 0:
+        return 0.0
+    cagr = (end_cap / start_cap) ** (1.0 / years) - 1.0
+    max_dd_frac = max_dd / start_cap
+    if max_dd_frac <= 0:
+        return 0.0
+    return cagr / max_dd_frac
+
+
 def write_alert(root: Path, kind: str, message: str, extra: dict | None = None) -> None:
     path = root / "logs" / "alerts.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -87,6 +140,11 @@ def print_report(db_path: str) -> None:
         )
     print("\n=== Stability ===")
     print(v.report().summary())
+    calmar = calmar_ratio_from_trades(list(v.trades))
+    print(
+        f"Calmar≈{calmar:.4f}  (informational, not a pass criterion at this stage; "
+        "CAGR / |maxDD| over closed-trade equity)"
+    )
 
     # Per-TF pnl
     print("\n=== PnL by TF ===")

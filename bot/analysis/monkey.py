@@ -4,6 +4,14 @@ Monkey test — random-strategy benchmark (Kevin Davey, ch. 12).
 Offline analyser over recorded ``bars`` / ``trades``. Does not change bot
 trading behaviour or ``policy_hash`` by itself. The PassCriteria monkey gate
 is a separate experiment-protocol change (window B pack).
+
+Invariant (Chan: one code path for live vs validation):
+  Baseline trades are taken from the journal (``trades`` rows actually executed
+  by the live SignalCore / MultiTFEngine path). They are NOT re-simulated via a
+  parallel signal engine. Monkey only generates *random* entry/exit analogues
+  calibrated to baseline stats; random strategies do not need SignalCore.
+  Bar OHLC used for random fills must match the same bucket boundaries as
+  ``TickBarBuilder._bucket_start`` (see tests/test_bar_path_consistency.py).
 """
 
 from __future__ import annotations
@@ -488,15 +496,16 @@ def _simulate_exit(
             exit_idx = min(len(s) - 1, entry_idx + 1)
         if exit_idx <= entry_idx:
             continue
+        # Mode exit: baseline entry is immutable (real fill), only exit is random.
         out.append(
             _make_closed(
                 symbol=t.symbol,
                 tf_min=t.tf_min,
                 side=t.side,
                 qty=t.qty,
-                entry_price=s.closes[entry_idx],
+                entry_price=t.entry_price,
                 exit_price=s.closes[exit_idx],
-                opened_ts_ms=s.start_ts[entry_idx],
+                opened_ts_ms=t.opened_ts_ms,
                 closed_ts_ms=s.end_ts[exit_idx],
                 costs=costs,
             )

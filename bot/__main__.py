@@ -39,6 +39,12 @@ def main(argv: list[str] | None = None) -> None:
         help="Run monkey test (random-strategy benchmark) and exit",
     )
     parser.add_argument(
+        "--momentum-diag",
+        action="store_true",
+        dest="momentum_diag",
+        help="Run Hurst/VR/lag-corr momentum diagnostics (offline) and exit",
+    )
+    parser.add_argument(
         "--runs",
         type=int,
         default=2000,
@@ -120,6 +126,24 @@ def main(argv: list[str] | None = None) -> None:
             json_path=out_json,
         )
         print(f"wrote {out_json}")
+        return
+
+    if args.momentum_diag:
+        from bot.analysis.momentum_diagnostics import print_momentum_diag
+        from bot.experiment import load_or_create_experiment
+
+        root = Path(__file__).resolve().parent.parent
+        policy = settings.frozen_policy_hash()
+        state = load_or_create_experiment(
+            root,
+            policy_hash=policy,
+            strategy_label=settings.strategy_label,
+        )
+        print_momentum_diag(
+            settings.db_path,
+            json_path=root / "data" / "momentum_diag.json",
+            policy_hash=state.policy_hash,
+        )
         return
 
     if args.promote_b:

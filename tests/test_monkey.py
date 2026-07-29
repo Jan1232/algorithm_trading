@@ -206,6 +206,53 @@ def test_consistency_trade_count_and_long_frac(tmp_path: Path):
         assert ok >= 15, f"mode={mode} only {ok}/20 matched ±10%"
 
 
+def test_monkey_exit_preserves_baseline_entry_price(tmp_path: Path):
+    """monkey_exit must keep real baseline entry_price, not bar close."""
+    db = tmp_path / "exit_entry.db"
+    _seed_db(db, n_bars=300, n_trades=20)
+    conn = sqlite3.connect(str(db))
+    # Force stored entry_price away from bar close
+    conn.execute("UPDATE trades SET entry_price = entry_price * 1.07 WHERE status='closed'")
+    conn.commit()
+    from bot.analysis.monkey import (
+        _attach_entry_indices,
+        _simulate_exit,
+        extract_trade_stats,
+        load_bar_series,
+        load_baseline_trades,
+    )
+
+    baseline = load_baseline_trades(conn, policy_hash="testhash")
+    stats = extract_trade_stats(conn, policy_hash="testhash")
+    series = load_bar_series(conn)
+    _attach_entry_indices(baseline, series)
+    conn.close()
+
+    assert baseline
+    # Confirm mismatch vs close at entry bar
+    mismatched = 0
+    for t in baseline:
+        s = series.get((t.symbol, t.tf_min))
+        if s is None or t.entry_bar_idx < 0:
+            continue
+        if abs(t.entry_price - s.closes[t.entry_bar_idx]) > 1e-9:
+            mismatched += 1
+    assert mismatched > 0
+
+    trades = _simulate_exit(
+        random.Random(0),
+        baseline=baseline,
+        stats=stats,
+        series=series,
+        costs=CostModel(),
+    )
+    by_key = {(t.symbol, t.tf_min, t.opened_ts_ms): t.entry_price for t in baseline}
+    for mt in trades:
+        key = (mt.symbol, mt.tf_min, mt.opened_ts_ms)
+        assert key in by_key
+        assert abs(mt.entry_price - by_key[key]) < 1e-12
+
+
 def test_determinism_same_seed(tmp_path: Path):
     db = tmp_path / "m.db"
     _seed_db(db, n_bars=300, n_trades=30)
