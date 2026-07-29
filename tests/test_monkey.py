@@ -297,3 +297,57 @@ def test_pass_criteria_monkey_fields_defaults():
     assert c.monkey_beat_threshold == 0.90
     assert c.monkey_runs == 2000
     assert c.monkey_seed == 42
+
+
+def test_seed_reproducible_across_pythonhashseed(tmp_path: Path):
+    """
+    A-1 regression: logged seed must reproduce across processes even when
+    PYTHONHASHSEED differs. Old code used hash(mode) and failed this.
+    """
+    import json
+    import os
+    import subprocess
+    import sys
+
+    db = tmp_path / "hashseed.db"
+    _seed_db(db, n_bars=250, n_trades=25)
+    script = (
+        "import json\n"
+        "from bot.analysis.monkey import run_monkey_test\n"
+        f"results = run_monkey_test({str(db)!r}, policy_hash='testhash', "
+        "modes=('entry','exit','both'), n_runs=20, seed=42, beat_threshold=0.90)\n"
+        "print(json.dumps(["
+        "{'mode': r.mode, 'mo': r.pct_runs_mo_worse, 'dd': r.pct_runs_maxdd_worse, "
+        "'dist': r.mo_distribution, 'passed': r.passed} for r in results]))\n"
+    )
+    root = Path(__file__).resolve().parent.parent
+    outs = []
+    for hs in ("0", "1"):
+        env = {**os.environ, "PYTHONHASHSEED": hs, "PYTHONPATH": str(root)}
+        proc = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=str(root),
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        outs.append(json.loads(proc.stdout.strip().splitlines()[-1]))
+    assert outs[0] == outs[1]
+
+
+def test_frozen_policy_hash_uses_passcriteria_monkey_defaults():
+    from bot.config import load_settings
+    from bot.experiment import (
+        MONKEY_BEAT_THRESHOLD_DEFAULT,
+        MONKEY_RUNS_DEFAULT,
+        MONKEY_SEED_DEFAULT,
+        REQUIRE_MONKEY_PASS_DEFAULT,
+    )
+
+    assert REQUIRE_MONKEY_PASS_DEFAULT is True
+    assert MONKEY_BEAT_THRESHOLD_DEFAULT == 0.90
+    assert MONKEY_RUNS_DEFAULT == 2000
+    assert MONKEY_SEED_DEFAULT == 42
+    # Same payload values as before A-2 refactor → hash unchanged
+    assert load_settings().frozen_policy_hash() == "13c081565f3b0820"

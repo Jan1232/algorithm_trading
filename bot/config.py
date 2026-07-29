@@ -11,6 +11,12 @@ import yaml
 from dotenv import load_dotenv
 
 from bot.core.costs import CostModel
+from bot.experiment import (
+    MONKEY_BEAT_THRESHOLD_DEFAULT,
+    MONKEY_RUNS_DEFAULT,
+    MONKEY_SEED_DEFAULT,
+    REQUIRE_MONKEY_PASS_DEFAULT,
+)
 
 
 @dataclass
@@ -99,10 +105,10 @@ class Settings:
             "exit_mode": self.exit_mode,
             # PassCriteria monkey gate (window B protocol) — changing these
             # invalidates the experiment the same way as economics knobs.
-            "require_monkey_pass": True,
-            "monkey_beat_threshold": 0.90,
-            "monkey_runs": 2000,
-            "monkey_seed": 42,
+            "require_monkey_pass": REQUIRE_MONKEY_PASS_DEFAULT,
+            "monkey_beat_threshold": MONKEY_BEAT_THRESHOLD_DEFAULT,
+            "monkey_runs": MONKEY_RUNS_DEFAULT,
+            "monkey_seed": MONKEY_SEED_DEFAULT,
         }
         raw = json.dumps(payload, sort_keys=True)
         return hashlib.sha256(raw.encode()).hexdigest()[:16]

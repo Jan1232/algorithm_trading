@@ -22,6 +22,9 @@ from bot.models import ClosedTrade, Side
 
 MonkeyMode = Literal["entry", "exit", "both"]
 ALL_MODES: tuple[MonkeyMode, ...] = ("entry", "exit", "both")
+# Deterministic per-mode salt — NEVER use hash(mode); PYTHONHASHSEED breaks
+# cross-process reproducibility of a logged seed.
+_MODE_SALT: dict[str, int] = {"entry": 1, "exit": 2, "both": 3}
 
 # Regenerate monkey runs outside this relative band.
 _MATCH_TOL = 0.10
@@ -553,7 +556,7 @@ def run_mode(
     mos: list[float] = []
     dds: list[float] = []
     for i in range(n_runs):
-        rng = random.Random(seed + i * 1_000_003 + hash(mode) % 10_000)
+        rng = random.Random(seed + i * 1_000_003 + _MODE_SALT[mode] * 10_000)
         trades = simulate_monkey_run(
             rng,
             mode=mode,

@@ -2,14 +2,19 @@
 """Reset demo DB + freeze a fresh experiment window B under current policy hash."""
 from __future__ import annotations
 
+import sys
 from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 from bot.config import load_settings
 from bot.experiment import start_fresh_window_b
 
 
 def main() -> None:
-    root = Path(__file__).resolve().parent.parent
+    root = _ROOT
     settings = load_settings()
     settings.mode = "demo"
     settings.db_path = settings.resolve_db_path()

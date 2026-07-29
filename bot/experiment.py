@@ -11,6 +11,12 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
+# Single source of truth for monkey gate defaults (also used by frozen_policy_hash).
+REQUIRE_MONKEY_PASS_DEFAULT = True
+MONKEY_BEAT_THRESHOLD_DEFAULT = 0.90
+MONKEY_RUNS_DEFAULT = 2000
+MONKEY_SEED_DEFAULT = 42
+
 
 @dataclass
 class PassCriteria:
@@ -21,10 +27,10 @@ class PassCriteria:
     echelon2_block_rate_min: float = 0.01
     echelon2_block_rate_max: float = 0.50
     # Monkey gate (Davey ch.12) — frozen with window B economics pack
-    require_monkey_pass: bool = True
-    monkey_beat_threshold: float = 0.90
-    monkey_runs: int = 2000
-    monkey_seed: int = 42
+    require_monkey_pass: bool = REQUIRE_MONKEY_PASS_DEFAULT
+    monkey_beat_threshold: float = MONKEY_BEAT_THRESHOLD_DEFAULT
+    monkey_runs: int = MONKEY_RUNS_DEFAULT
+    monkey_seed: int = MONKEY_SEED_DEFAULT
 
 
 @dataclass
