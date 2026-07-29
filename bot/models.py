@@ -37,6 +37,9 @@ class Tick:
     price: float
     size: float
     ts_ms: int
+    # publicTrade aggressor "Buy"|"Sell"; optional so paper/tests stay back-compat.
+    # Named aggressor (not side) to avoid confusion with Side.LONG/SHORT positions.
+    aggressor: Optional[str] = None
 
 
 @dataclass(frozen=True)

@@ -279,7 +279,14 @@ class BybitClient:
                     price = float(row.get("p") or row.get("price"))
                     size = float(row.get("v") or row.get("size") or 0)
                     ts = int(row.get("T") or row.get("ts") or time.time() * 1000)
-                    tick = Tick(symbol=symbol, price=price, size=size, ts_ms=ts)
+                    aggressor = row.get("S")  # "Buy" / "Sell"
+                    tick = Tick(
+                        symbol=symbol,
+                        price=price,
+                        size=size,
+                        ts_ms=ts,
+                        aggressor=aggressor,
+                    )
                     self._last_price[symbol] = price
                     if self.on_tick:
                         self.on_tick(tick)

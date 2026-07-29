@@ -5,6 +5,11 @@ from typing import Optional
 from bot.models import Bar, Tick
 
 
+def bucket_start(ts_ms: int, dt_ms: int) -> int:
+    """Align timestamp to fixed bar bucket (shared by OHLC and order-flow)."""
+    return (ts_ms // dt_ms) * dt_ms
+
+
 class TickBarBuilder:
     """Aggregate ticks into OHLC bars of fixed duration dt_min."""
 
@@ -22,7 +27,7 @@ class TickBarBuilder:
         self._tick_count = 0
 
     def _bucket_start(self, ts_ms: int) -> int:
-        return (ts_ms // self.dt_ms) * self.dt_ms
+        return bucket_start(ts_ms, self.dt_ms)
 
     def _flush(self, end_ts_ms: int) -> Bar:
         assert self._open is not None

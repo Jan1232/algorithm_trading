@@ -61,6 +61,30 @@ class TradeStore:
                     UNIQUE(symbol, tf_min, start_ts_ms)
                 );
 
+                CREATE TABLE IF NOT EXISTS orderflow_bars (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    symbol TEXT NOT NULL,
+                    tf_min INTEGER NOT NULL,
+                    start_ts_ms INTEGER NOT NULL,
+                    end_ts_ms INTEGER NOT NULL,
+                    buy_vol REAL NOT NULL,
+                    sell_vol REAL NOT NULL,
+                    unknown_vol REAL NOT NULL,
+                    delta REAL NOT NULL,
+                    UNIQUE(symbol, tf_min, start_ts_ms)
+                );
+
+                CREATE TABLE IF NOT EXISTS footprint (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    symbol TEXT NOT NULL,
+                    tf_min INTEGER NOT NULL,
+                    start_ts_ms INTEGER NOT NULL,
+                    price_bucket REAL NOT NULL,
+                    buy_vol REAL NOT NULL,
+                    sell_vol REAL NOT NULL,
+                    UNIQUE(symbol, tf_min, start_ts_ms, price_bucket)
+                );
+
                 CREATE TABLE IF NOT EXISTS signals (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     ts_ms INTEGER NOT NULL,
@@ -116,6 +140,8 @@ class TradeStore:
 
                 CREATE INDEX IF NOT EXISTS idx_bars_sym_tf ON bars(symbol, tf_min, start_ts_ms);
                 CREATE INDEX IF NOT EXISTS idx_shadow_bars_sym_tf ON shadow_bars(symbol, tf_min, start_ts_ms);
+                CREATE INDEX IF NOT EXISTS idx_orderflow_sym_tf ON orderflow_bars(symbol, tf_min, start_ts_ms);
+                CREATE INDEX IF NOT EXISTS idx_footprint_sym_tf ON footprint(symbol, tf_min, start_ts_ms);
                 CREATE INDEX IF NOT EXISTS idx_signals_sym ON signals(symbol, ts_ms);
                 CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status, symbol);
                 CREATE INDEX IF NOT EXISTS idx_events_kind ON events(kind, ts_ms);
@@ -174,6 +200,54 @@ class TradeStore:
                     bar.end_ts_ms,
                     bar.tick_count,
                 ),
+            )
+            self._conn.commit()
+
+    def save_orderflow_bar(self, bar: Any) -> None:
+        """Persist aggressor volume bar (record-only; not used by trading)."""
+        with self._lock:
+            self._conn.execute(
+                """
+                INSERT OR REPLACE INTO orderflow_bars(
+                    symbol, tf_min, start_ts_ms, end_ts_ms,
+                    buy_vol, sell_vol, unknown_vol, delta
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    bar.symbol,
+                    bar.tf_min,
+                    bar.start_ts_ms,
+                    bar.end_ts_ms,
+                    bar.buy_vol,
+                    bar.sell_vol,
+                    bar.unknown_vol,
+                    bar.delta,
+                ),
+            )
+            self._conn.commit()
+
+    def save_footprint_rows(self, rows: list[dict]) -> None:
+        """Persist footprint buckets for one closed order-flow bar."""
+        if not rows:
+            return
+        with self._lock:
+            self._conn.executemany(
+                """
+                INSERT OR REPLACE INTO footprint(
+                    symbol, tf_min, start_ts_ms, price_bucket, buy_vol, sell_vol
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        r["symbol"],
+                        r["tf_min"],
+                        r["start_ts_ms"],
+                        r["price_bucket"],
+                        r["buy_vol"],
+                        r["sell_vol"],
+                    )
+                    for r in rows
+                ],
             )
             self._conn.commit()
 

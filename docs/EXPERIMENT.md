@@ -86,6 +86,12 @@ Calmar ratio в `--report` — **только informational**, не pass-criteri
 Живую торговлю на 1/5m не запускать, пока диагностика + costs не зелёные;
 это вход для будущего `[NEW-HASH]` окна, не для текущего window B.
 
+Order-flow сбор (record-only): `orderflow_collect` + `orderflow_tf_min`
+пишут `orderflow_bars` / `footprint` (дельта, buy/sell vol). **НЕ в hash,
+НЕ в сигнал.** CVD вычислять при чтении. Шаг 2 (проверка гипотезы vs Mo) —
+только после накопления + закрытых сделок window B; заранее зафиксировать
+2–3 гипотезы (не перебирать признаки).
+
 Перекрёстная валидация с monkey:
 - Hurst<0.5 + fail `monkey_entry` → согласованное свидетельство против bar-momentum;
 - Hurst>0.5 + PASS `monkey_entry` → предпосылка подтверждена независимо от Chan.

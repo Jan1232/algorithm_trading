@@ -7,6 +7,7 @@ from bot.config import Settings
 from bot.core.bars import TickBarBuilder
 from bot.core.liquidity import LiquidityFilter
 from bot.core.mtf import MultiTFEngine
+from bot.analysis.orderflow import OrderFlowBuilder
 from bot.models import Tick
 from bot.orders.manager import OrderManager
 from bot.storage.db import TradeStore
@@ -39,6 +40,19 @@ class SymbolWorker:
         self.shadow_builders = {
             tf: TickBarBuilder(symbol, tf) for tf in (settings.shadow_timeframes_min or [])
         }
+        of_tfs = (
+            list(settings.orderflow_tf_min)
+            if settings.orderflow_collect and settings.orderflow_tf_min
+            else []
+        )
+        self.orderflow_builders = {
+            tf: OrderFlowBuilder(
+                symbol,
+                tf,
+                price_bucket_bps=settings.orderflow_price_bucket_bps,
+            )
+            for tf in of_tfs
+        }
 
     def on_tick(self, tick: Tick) -> None:
         # Shadow first: pure bar persistence, zero trading side-effects.
@@ -46,6 +60,12 @@ class SymbolWorker:
             closed_shadow = builder.on_tick(tick)
             if closed_shadow is not None and self.store is not None:
                 self.store.save_shadow_bar(closed_shadow)
+
+        for _tf, of_builder in self.orderflow_builders.items():
+            of_bar = of_builder.on_tick(tick)
+            if of_bar is not None and self.store is not None:
+                self.store.save_orderflow_bar(of_bar)
+                self.store.save_footprint_rows(of_bar.footprint_rows())
 
         self.liquidity.on_tick(tick)
         self.last_price = tick.price
