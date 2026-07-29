@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 
 from bot.core.costs import CostModel
 from bot.experiment import (
+    ECHELON2_BLOCK_RATE_GATE_ENABLED_DEFAULT,
     MONKEY_BEAT_THRESHOLD_DEFAULT,
     MONKEY_RUNS_DEFAULT,
     MONKEY_SEED_DEFAULT,
@@ -103,12 +104,14 @@ class Settings:
             "funding_bps_per_8h": self.costs.funding_bps_per_8h,
             "strategy_label": self.strategy_label,
             "exit_mode": self.exit_mode,
-            # PassCriteria monkey gate (window B protocol) — changing these
-            # invalidates the experiment the same way as economics knobs.
+            # PassCriteria / cost-model protocol knobs (window B).
             "require_monkey_pass": REQUIRE_MONKEY_PASS_DEFAULT,
             "monkey_beat_threshold": MONKEY_BEAT_THRESHOLD_DEFAULT,
             "monkey_runs": MONKEY_RUNS_DEFAULT,
             "monkey_seed": MONKEY_SEED_DEFAULT,
+            "echelon2_block_rate_gate_enabled": ECHELON2_BLOCK_RATE_GATE_ENABLED_DEFAULT,
+            # FIX-3: funding charged on entry (held) notional, not avg entry/exit
+            "funding_notional_base": "entry",
         }
         raw = json.dumps(payload, sort_keys=True)
         return hashlib.sha256(raw.encode()).hexdigest()[:16]

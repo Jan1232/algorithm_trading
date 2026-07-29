@@ -18,6 +18,11 @@ MONKEY_RUNS_DEFAULT = 2000
 MONKEY_SEED_DEFAULT = 42
 
 
+# echelon2 block-rate gate DISABLED for window B (structurally ~0% after
+# per-trade-risk fix). Fields kept for logging / back-compat.
+ECHELON2_BLOCK_RATE_GATE_ENABLED_DEFAULT = False
+
+
 @dataclass
 class PassCriteria:
     min_closed_trades: int = 200
@@ -26,6 +31,9 @@ class PassCriteria:
     max_drawdown_pct: float = 0.10
     echelon2_block_rate_min: float = 0.01
     echelon2_block_rate_max: float = 0.50
+    # After per-trade-risk fix this metric is structurally ~0% and no longer
+    # informative. Kept as fields for logging, excluded from pass decision.
+    echelon2_block_rate_gate_enabled: bool = ECHELON2_BLOCK_RATE_GATE_ENABLED_DEFAULT
     # Monkey gate (Davey ch.12) — frozen with window B economics pack
     require_monkey_pass: bool = REQUIRE_MONKEY_PASS_DEFAULT
     monkey_beat_threshold: float = MONKEY_BEAT_THRESHOLD_DEFAULT
@@ -144,10 +152,12 @@ def start_fresh_window_b(
         notes=notes
         or (
             "Window B (economics pack): TF>=60, per_trade_risk_pct, "
-            "vote>=2/margin>=2, trailing_buffer_frac; "
-            "monkey gate (entry/exit/both ≥90% beat on Mo+maxDD, seed logged). "
+            "vote>=2/margin>=2, trailing_buffer_frac=0.10 round-1, "
+            "deposit_fallback=1000, funding on entry notional, "
+            "monkey gate (entry/exit/both ≥90% beat on Mo+maxDD, seed logged); "
+            "echelon2 block-rate NOT a pass criterion. "
             "Goal = economic viability of config, NOT factor attribution / edge. "
-            "Do not add monkey gate mid-window — restart with new policy_hash."
+            "Do not change config mid-window — restart with new policy_hash."
         ),
     )
     path.write_text(json.dumps(state.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
@@ -210,7 +220,7 @@ def evaluate_pass(
             f"max_drawdown_pct={max_drawdown_pct:.4f} > {criteria.max_drawdown_pct:.4f}"
         )
 
-    if not (
+    if criteria.echelon2_block_rate_gate_enabled and not (
         criteria.echelon2_block_rate_min
         <= echelon2_block_rate
         <= criteria.echelon2_block_rate_max

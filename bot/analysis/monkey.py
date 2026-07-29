@@ -694,7 +694,7 @@ def format_monkey_report(
         verdict = "PASS" if r.passed else "FAIL"
         lines.append(
             f"  {mode:5s}: beats {r.pct_runs_mo_worse * 100:.1f}% on Mo, "
-            f"{r.pct_runs_maxdd_worse * 100:.1f}% on maxDD  → {verdict}"
+            f"{r.pct_runs_maxdd_worse * 100:.1f}% on maxDD  -> {verdict}"
         )
     both = by_mode.get("both")
     if both is not None:

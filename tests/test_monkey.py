@@ -339,6 +339,7 @@ def test_seed_reproducible_across_pythonhashseed(tmp_path: Path):
 def test_frozen_policy_hash_uses_passcriteria_monkey_defaults():
     from bot.config import load_settings
     from bot.experiment import (
+        ECHELON2_BLOCK_RATE_GATE_ENABLED_DEFAULT,
         MONKEY_BEAT_THRESHOLD_DEFAULT,
         MONKEY_RUNS_DEFAULT,
         MONKEY_SEED_DEFAULT,
@@ -349,5 +350,6 @@ def test_frozen_policy_hash_uses_passcriteria_monkey_defaults():
     assert MONKEY_BEAT_THRESHOLD_DEFAULT == 0.90
     assert MONKEY_RUNS_DEFAULT == 2000
     assert MONKEY_SEED_DEFAULT == 42
-    # Same payload values as before A-2 refactor → hash unchanged
-    assert load_settings().frozen_policy_hash() == "13c081565f3b0820"
+    assert ECHELON2_BLOCK_RATE_GATE_ENABLED_DEFAULT is False
+    # Prefreeze econ pack (deposit_fallback=1000, funding entry notional, …)
+    assert load_settings().frozen_policy_hash() == "3eddb8d58eff91d6"

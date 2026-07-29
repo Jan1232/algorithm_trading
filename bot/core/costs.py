@@ -1,4 +1,4 @@
-"""Execution cost model for realistic Mo (fees + slippage; funding stub)."""
+"""Execution cost model for realistic Mo (fees + slippage + funding)."""
 
 from __future__ import annotations
 
@@ -9,28 +9,35 @@ from dataclasses import dataclass
 class CostModel:
     """
     Bybit linear-ish defaults (taker). Applied on every fill.
-    funding_bps_per_8h: reserved for later hold-time adjustment (stub=0 until wired).
+    funding_bps_per_8h applied over hold_hours / 8 on the held position notional.
     """
 
     taker_fee_bps: float = 5.5  # 0.055%
     slippage_bps: float = 5.0  # 0.05% adverse
-    funding_bps_per_8h: float = 1.0  # stub default ~0.01%/8h; applied only if hold_hours given
+    funding_bps_per_8h: float = 1.0  # ~0.01%/8h; applied when hold_hours given
 
     def fee_usd(self, notional: float) -> float:
         return abs(notional) * self.taker_fee_bps / 10_000.0
 
     def slip_price(self, price: float, *, side_buy: bool) -> float:
-        """Adverse slip: buy pays more, sell receives less."""
+        """
+        Adverse slip on price (used by paper fills).
+
+        TODO: round_trip_costs_usd approximates slippage as bps on notional
+        instead of this price adjustment — two mechanisms coexist intentionally
+        for paper vs accounting; do not diverge their bps defaults.
+        """
         mult = 1.0 + self.slippage_bps / 10_000.0
         if side_buy:
             return price * mult
         return price / mult
 
-    def funding_usd(self, notional: float, hold_hours: float) -> float:
+    def funding_usd(self, position_notional: float, hold_hours: float) -> float:
+        """Funding on held position notional over hold_hours / 8 periods."""
         if hold_hours <= 0 or self.funding_bps_per_8h <= 0:
             return 0.0
         periods = hold_hours / 8.0
-        return abs(notional) * (self.funding_bps_per_8h / 10_000.0) * periods
+        return abs(position_notional) * (self.funding_bps_per_8h / 10_000.0) * periods
 
     def round_trip_costs_usd(
         self,
@@ -49,5 +56,6 @@ class CostModel:
             abs(entry_notional) * self.slippage_bps / 10_000.0
             + abs(exit_notional) * self.slippage_bps / 10_000.0
         )
-        funding = self.funding_usd((entry_notional + exit_notional) / 2.0, hold_hours)
+        # Funding on the HELD position notional (entry), not avg entry/exit
+        funding = self.funding_usd(entry_notional, hold_hours)
         return fees, slip, funding

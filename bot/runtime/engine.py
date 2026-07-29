@@ -112,6 +112,12 @@ def build_stack(settings: Settings):
                     wallet,
                     settings.deposit_usd,
                 )
+                if wallet < 500.0:
+                    logger.warning(
+                        "WARNING: wallet balance <$500 (%.4f USDT) — "
+                        "BTC may not trade (minQty / notional too small)",
+                        wallet,
+                    )
                 settings.deposit_usd = wallet
                 kill.max_daily_loss_usd = wallet * settings.kill_switch.max_daily_loss_pct
             else:
