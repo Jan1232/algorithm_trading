@@ -199,14 +199,56 @@ class CellDiag:
     premise: str  # momentum | mean_reversion | random_walk | insufficient_data
 
 
-def _classify(h: float, vr_vals: list[float]) -> str:
-    if math.isnan(h):
-        return "insufficient_data"
-    vr_mean = _mean([v for v in vr_vals if not math.isnan(v)]) if vr_vals else float("nan")
-    if h > 0.55 or (not math.isnan(vr_mean) and vr_mean > 1.05):
+# Classification: VR+z is primary (unbiased + significance). Hurst is secondary
+# only — classical R/S is upward-biased on finite samples, so a raw H>0.55 must
+# NEVER alone label random walk as momentum.
+_VR_Z_ABS_MIN = 2.0
+_HURST_MOM_FALLBACK = 0.65  # raised vs naive 0.55 due to R/S finite-sample bias
+_HURST_MR_FALLBACK = 0.40
+
+
+def _classify(
+    h: float,
+    vr_points: Sequence[tuple[float, float]],
+) -> str:
+    """
+    Premise label for one (symbol, tf) cell.
+
+    Primary signal: Lo–MacKinlay VR with |z| >= 2. Momentum if VR>1 and z>0;
+    mean-reversion if VR<1 and z<0. Majority across horizons.
+    If no horizon is significant → random_walk (Hurst alone must not override).
+    Hurst fallback only when no usable VR points exist at all.
+    """
+    usable = [
+        (vr, z)
+        for vr, z in vr_points
+        if not math.isnan(vr) and not math.isnan(z)
+    ]
+    if not usable:
+        if math.isnan(h):
+            return "insufficient_data"
+        # No VR — conservative Hurst-only fallback (elevated thresholds)
+        if h > _HURST_MOM_FALLBACK:
+            return "momentum"
+        if h < _HURST_MR_FALLBACK:
+            return "mean_reversion"
+        return "random_walk"
+
+    mom_votes = 0
+    mr_votes = 0
+    for vr, z in usable:
+        if abs(z) < _VR_Z_ABS_MIN:
+            continue
+        if vr > 1.0 and z > 0:
+            mom_votes += 1
+        elif vr < 1.0 and z < 0:
+            mr_votes += 1
+
+    if mom_votes > mr_votes and mom_votes >= 1:
         return "momentum"
-    if h < 0.45 or (not math.isnan(vr_mean) and vr_mean < 0.95):
+    if mr_votes > mom_votes and mr_votes >= 1:
         return "mean_reversion"
+    # Usable VR but nothing significant (or tied) → do not let biased Hurst promote
     return "random_walk"
 
 
@@ -223,8 +265,27 @@ def diagnose(
     filtering; bars table has no policy column — currently unused.
     """
     _ = policy_hash
-    conn = sqlite3.connect(str(db_path))
+    path = Path(db_path)
+    if not path.exists():
+        return {
+            "n_cells": 0,
+            "error": f"database not found: {path}",
+            "params": {},
+            "cells": [],
+        }
+
+    conn = sqlite3.connect(str(path))
     try:
+        has_bars = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='bars'"
+        ).fetchone()
+        if not has_bars:
+            return {
+                "n_cells": 0,
+                "error": "no bars table — no recorded bars yet (run demo/paper to accumulate)",
+                "params": {},
+                "cells": [],
+            }
         rows = conn.execute(
             """
             SELECT symbol, tf_min, close, start_ts_ms
@@ -247,11 +308,11 @@ def diagnose(
     for (symbol, tf_min), (closes, starts) in sorted(series.items()):
         h = hurst_exponent(closes)
         vr_map: dict[str, dict[str, float]] = {}
-        vr_list: list[float] = []
+        vr_points: list[tuple[float, float]] = []
         for q in vr_horizons:
             vr, z = variance_ratio(closes, int(q))
             vr_map[str(q)] = {"vr": vr, "z": z}
-            vr_list.append(vr)
+            vr_points.append((vr, z))
         corr, p = lagged_return_correlation(
             closes, starts, lookback_bars=lookback_bars, hold_bars=hold_bars
         )
@@ -264,7 +325,7 @@ def diagnose(
                 vr=vr_map,
                 lag_corr=corr,
                 lag_p=p,
-                premise=_classify(h, vr_list),
+                premise=_classify(h, vr_points),
             )
         )
 
@@ -273,18 +334,28 @@ def diagnose(
         "params": {
             "hurst_on": "log_returns_RS",
             "vr_horizons": list(vr_horizons),
+            "vr_z_abs_min": _VR_Z_ABS_MIN,
+            "classify_primary": "VR+z",
+            "classify_hurst_fallback_only_if_no_vr": True,
             "lag_lookback_bars": lookback_bars,
             "lag_hold_bars": hold_bars,
             "lag_step_rule": "min(lookback, hold) per Chan AT ch.6",
+            "note": "lag_corr is informational; premise uses VR+z",
         },
         "cells": [asdict(c) for c in cells],
     }
 
 
 def format_diag_table(payload: dict[str, Any]) -> str:
+    if payload.get("error"):
+        return (
+            "MOMENTUM DIAGNOSTICS (informational; not a pass criterion)\n"
+            f"  ERROR: {payload['error']}"
+        )
     lines = [
         "MOMENTUM DIAGNOSTICS (informational; not a pass criterion)",
-        f"  cells={payload.get('n_cells', 0)}  hurst_on=log_returns R/S",
+        f"  cells={payload.get('n_cells', 0)}  hurst_on=log_returns R/S  "
+        f"premise=VR+|z|>={_VR_Z_ABS_MIN} (Hurst secondary)",
         "  symbol     tf   n_bars   Hurst     VR(q=2)   VR(q=8)   lag_r     lag_p   premise",
     ]
     for c in payload.get("cells") or []:

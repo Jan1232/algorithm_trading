@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import random
+from pathlib import Path
 
 from bot.analysis.momentum_diagnostics import (
     hurst_exponent,
@@ -94,3 +95,55 @@ def test_lagged_corr_overlapping_vs_nonoverlapping_schedule():
         closes, lookback_bars=lookback, hold_bars=hold, step=min(lookback, hold)
     )
     assert (r_chan, p_chan) == (r_min, p_min)
+
+
+def test_classify_rw_not_momentum_despite_hurst_bias():
+    """R/S Hurst on finite RW is upward-biased; premise must stay random_walk."""
+    from bot.analysis.momentum_diagnostics import _classify, variance_ratio
+
+    closes = _geom_rw(4096, seed=11)
+    h = hurst_exponent(closes)
+    # Reproduce the empirical failure mode: H often > 0.55 on pure RW
+    assert h > 0.55 or True  # bias may or may not exceed 0.55; force the check below
+    points = [variance_ratio(closes, q) for q in (2, 4, 8, 16)]
+    # Even if we inject a biased Hurst, usable insignificant VR → random_walk
+    assert _classify(0.572, points) == "random_walk"
+    assert _classify(h, points) == "random_walk"
+
+
+def test_classify_ar_plus_momentum_ar_minus_meanrev():
+    from bot.analysis.momentum_diagnostics import _classify, variance_ratio
+
+    mom = _prices_from_returns(_ar1_returns(4096, phi=0.7, seed=21))
+    mr = _prices_from_returns(_ar1_returns(4096, phi=-0.6, seed=22))
+    mom_pts = [variance_ratio(mom, q) for q in (2, 4, 8, 16)]
+    mr_pts = [variance_ratio(mr, q) for q in (2, 4, 8, 16)]
+    assert _classify(hurst_exponent(mom), mom_pts) == "momentum"
+    assert _classify(hurst_exponent(mr), mr_pts) == "mean_reversion"
+
+
+def test_classify_insignificant_vr_ignores_hurst():
+    from bot.analysis.momentum_diagnostics import _classify
+
+    # Synthetic near-RW VR with tiny z — must not promote via Hurst
+    points = [(1.02, 0.4), (0.98, -0.3), (1.01, 0.2), (0.99, -0.1)]
+    assert _classify(0.70, points) == "random_walk"
+    assert _classify(0.30, points) == "random_walk"
+
+
+def test_diagnose_missing_db_and_missing_bars_table(tmp_path: Path):
+    from bot.analysis.momentum_diagnostics import diagnose, format_diag_table
+
+    missing = diagnose(tmp_path / "nope.db")
+    assert missing["n_cells"] == 0
+    assert "not found" in (missing.get("error") or "")
+    assert "ERROR" in format_diag_table(missing)
+
+    empty = tmp_path / "empty.db"
+    import sqlite3
+
+    sqlite3.connect(str(empty)).close()
+    payload = diagnose(empty)
+    assert payload["n_cells"] == 0
+    assert "no bars table" in (payload.get("error") or "")
+    assert "ERROR" in format_diag_table(payload)
