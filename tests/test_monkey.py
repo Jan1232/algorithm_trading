@@ -399,4 +399,4 @@ def test_frozen_policy_hash_uses_passcriteria_monkey_defaults():
     assert MONKEY_SEED_DEFAULT == 42
     assert ECHELON2_BLOCK_RATE_GATE_ENABLED_DEFAULT is False
     # Prefreeze econ pack (deposit_fallback=1000, funding entry notional, …)
-    assert load_settings().frozen_policy_hash() == "3eddb8d58eff91d6"
+    assert load_settings().frozen_policy_hash() == "b38a2daf61e58795"

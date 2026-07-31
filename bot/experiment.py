@@ -1,4 +1,4 @@
-"""Experiment freeze: windows A/B, pass criteria, policy hash."""
+"""Experiment freeze: windows A/B/C, pass criteria, policy hash."""
 
 from __future__ import annotations
 
@@ -46,13 +46,15 @@ class ExperimentState:
     policy_hash: str
     strategy_label: str
     frozen_at: str
-    window: str  # A | B
+    window: str  # A | B | C
     window_a_started_at: str
     window_b_started_at: Optional[str] = None
+    window_c_started_at: Optional[str] = None
     criteria: PassCriteria = field(default_factory=PassCriteria)
     notes: str = (
         "Window A: plumbing + risk gates only. "
-        "Window B: look once for Mo sign after costs; no config changes."
+        "Window B: vote 2/2 economics pack (closed — tempo). "
+        "Window C: vote 2/1 (margin=1); monkey_entry priority."
     )
 
     def to_dict(self) -> dict[str, Any]:
@@ -83,6 +85,7 @@ def load_or_create_experiment(
             window=raw.get("window", "A"),
             window_a_started_at=raw["window_a_started_at"],
             window_b_started_at=raw.get("window_b_started_at"),
+            window_c_started_at=raw.get("window_c_started_at"),
             criteria=PassCriteria(**{**asdict(PassCriteria()), **crit_raw}),
             notes=raw.get("notes", ""),
         )
@@ -162,6 +165,45 @@ def start_fresh_window_b(
     )
     path.write_text(json.dumps(state.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
     logger.info("experiment FRESH window B policy_hash=%s -> %s", policy_hash, path)
+    return state
+
+
+def start_fresh_window_c(
+    root: Path,
+    *,
+    policy_hash: str,
+    strategy_label: str,
+    criteria: Optional[PassCriteria] = None,
+    notes: Optional[str] = None,
+    window_b_started_at: Optional[str] = None,
+) -> ExperimentState:
+    """
+    Overwrite experiment.json for window C under a new policy_hash (vote margin=1).
+    Caller archives window B DB separately; trades of B must not enter C gate.
+    """
+    path = experiment_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    now = datetime.now(timezone.utc).isoformat()
+    state = ExperimentState(
+        policy_hash=policy_hash,
+        strategy_label=strategy_label,
+        frozen_at=now,
+        window="C",
+        window_a_started_at=now,
+        window_b_started_at=window_b_started_at,
+        window_c_started_at=now,
+        criteria=criteria or PassCriteria(),
+        notes=notes
+        or (
+            "Window C: same economics pack as B, but vote_min_margin=1 "
+            "(keep vote_min_directional=2). B closed for non-viable tempo "
+            "(~2 trades/34h under margin=2); Mo of B unread (n=2). "
+            "PassCriteria still ≥200 closed + monkey (entry priority — "
+            "did loosening admit noise?). Do not change config mid-window."
+        ),
+    )
+    path.write_text(json.dumps(state.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
+    logger.info("experiment FRESH window C policy_hash=%s -> %s", policy_hash, path)
     return state
 
 

@@ -18,7 +18,7 @@ max_leverage_frac: 1.0      # notional cap = deposit * max_leverage_frac
 # Exit / vote policy (window B)
 trailing_buffer_frac: 0.10  # trailing stop buffer as fraction of prev bar range
 vote_min_directional: 2     # min agreeing directional TFs to enter
-vote_min_margin: 2          # min (dir - opposite) margin
+vote_min_margin: 1          # window C: was 2; keep ≥2 directional, drop 2× margin
 
 # Bybit linear one-way: only one net position per symbol (pick best TF)
 one_position_per_symbol: true

@@ -40,7 +40,7 @@ class Settings:
     max_leverage_frac: float = 1.0
     trailing_buffer_frac: float = 0.10
     vote_min_directional: int = 2
-    vote_min_margin: int = 2
+    vote_min_margin: int = 1  # window C (was 2 in window B)
     tf_horizon_min: int = 1440
     tf_step_min: int = 15
     timeframes_explicit: list[int] = field(default_factory=list)
@@ -180,7 +180,7 @@ def load_settings(
         max_leverage_frac=float(raw.get("max_leverage_frac", 1.0)),
         trailing_buffer_frac=float(raw.get("trailing_buffer_frac", 0.10)),
         vote_min_directional=int(raw.get("vote_min_directional", 2)),
-        vote_min_margin=int(raw.get("vote_min_margin", 2)),
+        vote_min_margin=int(raw.get("vote_min_margin", 1)),
         tf_horizon_min=int(raw.get("tf_horizon_min", 1440)),
         tf_step_min=int(raw.get("tf_step_min", 15)),
         timeframes_explicit=explicit,

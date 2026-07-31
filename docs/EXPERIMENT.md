@@ -7,115 +7,77 @@
    / `deposit_usd` (fallback) / funding-модели → новый hash → старый эксперимент
    недействителен.
 3. Окно A: plumbing + risk gates (не судить о edge).
-4. Окно B: экономическая жизнеспособность конфигурации после costs; без подкрутки.
+4. Окно B: economics pack при vote 2/2 — **закрыто** (темп нежизнеспособен).
+5. Окно C: тот же pack, `vote_min_margin=1` (сохраняя `vote_min_directional=2`).
 
-## Window B — economics pack (один policy_hash)
+## Window B — CLOSED (hash `3eddb8d58eff91d6`)
 
-Текущий freeze id: **`policy_hash=3eddb8d58eff91d6`**.
+Заморожено: `2026-07-29T13:52:29Z`. Артефакты: `data/archives/window_b_*`,
+`data/window_b_closure.json`.
 
-Состав пакета (факторы **не атрибутируются** по отдельности):
-1. TF grid без 15/30: `[60, 120, 240, 480, 960, 1440]` — снижение оборота.
-2. `per_trade_risk_pct=0.02` вместо `P / N_R` в сайзинге; `max_leverage_frac=1.0`.
-3. `trailing_buffer_frac=0.10` — **round-1 constant, not data-calibrated**;
-   revisit if `monkey_exit` fails.
-4. Vote gate: `vote_min_directional=2`, `vote_min_margin=2`; `n_none` ≠ flat.
-5. **Monkey gate** (Davey ch.12): baseline должен бить ≥90% случайных аналогов
-   по Mo **и** maxDD во всех трёх режимах (`entry` / `exit` / `both`).
-   Seed фиксируется и пишется в отчёт. Гейт применяется только при
-   `trades_closed >= min_closed_trades` (иначе вердикт — шум, не FAIL).
-6. `deposit_usd` fallback = **1000** (demo/live берут wallet; wallet должен быть
-   ≥ ~$1000, иначе BTC может не торговаться из‑за minQty).
-7. Funding считается от **entry (held) notional** × `hold_hours/8`, не от среднего
-   entry/exit.
+Состав пакета (без изменений переносится в C, кроме margin):
+1. TF grid: `[60, 120, 240, 480, 960, 1440]`.
+2. `per_trade_risk_pct=0.02`; `max_leverage_frac=1.0`.
+3. `trailing_buffer_frac=0.10` — round-1 constant.
+4. Vote: `vote_min_directional=2`, **`vote_min_margin=2`**.
+5. Monkey gate ≥90% beat (entry/exit/both), seed logged; ≥200 closed.
+6. `deposit_usd` fallback = 1000; funding на entry notional.
+7. Restart-recovery (NO-HASH, `1a936f0`): prev из БД; partial kline optional OFF.
 
-Цель window B: доказать, что конфигурация **экономически жизнеспособна**
-и отличима от случайного входа/выхода на той же статистике сделок.
-Не измерять устойчивость edge во времени (walk-forward — отдельно).
+**Вердикт закрытия (не по Mo):** конфигурация валидна, грид после фикса
+рестарта работает (бары до 960), но темп входов структурно нежизнеспособен
+(~2 закрытых / ~34 ч → месяцы до гейта 200). Directional-сигналы были
+(long+short), vote 2/2 резал ~94%. **Mo / PnL window B не читаются (n=2).**
+Сделки B **не** входят в PassCriteria окна C (другой hash + свежая demo DB).
 
-`Mo > 0` само по себе **не** доказывает edge: случайный вход с той же частотой,
-направлением и удержанием мог бы дать такой же Mo. Monkey test отвечает:
-«дал бы случайный вход Mo не хуже — и как часто?»
+## Window C — vote 2/1 (текущее)
 
-Сброс и старт B:
+Текущий freeze id: **`policy_hash=b38a2daf61e58795`**.
+
+Единственное отличие от B: `vote_min_margin: 1` (было 2).
+`vote_min_directional` остаётся **2** — один шумный ТФ по-прежнему не входит.
+
+Цель: проверить, лечится ли темп ослаблением margin без потери качества входа.
+**monkey_entry обязателен и приоритетен** при ≥200: baseline 2/1 vs случайный
+вход. Если не бьёт random — купили частоту ценой мусора; тогда margin=2 был
+фильтром качества, а не killer'ом, и нужен другой путь (не ослабление vote).
+
+Сброс и старт C:
 ```bash
-python scripts/start_window_b.py
+# остановить demo PM2, затем:
+python scripts/start_window_c.py
+pm2 restart bybit-demo-bot
 ```
 
-Не добавлять monkey-гейт к уже идущему окну задним числом — только вместе
-с новым `policy_hash` / `start_fresh_window_b`.
+Не читать Mo раньше 200 закрытых. Не менять config mid-window.
 
-## Критерии прохождения (по умолчанию в experiment.json)
+## Критерии прохождения (PassCriteria — те же числа)
 - min_closed_trades >= 200
 - Mo > 0 после fees/slippage/funding
 - >= 70% TF-корзин с положительным Mo
-- maxDD <= P (рантайм-предохранитель echelon-2; P=0.10 остаётся)
-- monkey gate PASS (entry+exit+both), seed logged; порог 0.90; runs=2000
+- maxDD <= P
+- monkey gate PASS (entry+exit+both); на C особенно смотреть **monkey_entry**
+- echelon2 block-rate gate **выключен**
 
-**Исключено из pass-критериев:** доля блокировок echelon2 ∈ [1%, 50%].
-После `per_trade_risk_pct` block rate структурно ≈ 0% и больше не информативен.
-Поле `echelon2_block_rate_gate_enabled=false` (логирование полей сохранено).
+Calmar в `--report` — informational only.
 
-Calmar ratio в `--report` — **только informational**, не pass-criterion.
+## Momentum / shadow / orderflow (NO-HASH)
 
-## Ограничения monkey test
-1. Гейт только при `trades_closed >= min_closed_trades`.
-2. Издержки обезьян = `CostModel` baseline (иначе сравнение нечестное).
-3. Реплей по `close` баров — упрощение; цель = равные условия, не абсолютная точность.
-4. Не доказывает устойчивость edge во времени.
-5. PASS без записанного seed недействителен.
-6. Baseline-сделки из journal (live-путь), НЕ параллельный SignalCore-реплей.
-7. `monkey_exit` сохраняет реальный `entry_price` baseline; варьируется только выход.
+Без изменений относительно B: record-only, не в hash, не в сигнал.
+Шаг 2 order-flow vs Mo — после накопления закрытых сделок **текущего** окна.
 
-## Интерпретация режимов (entry / exit / both)
+## POST-200 / NEW-HASH (после вердикта гейта C)
 
-Это чтение уже существующего отчёта, не новый код:
-- падает `monkey_exit`, `monkey_entry` проходит → edge во входе есть, проблема в выходе (hybrid/trailing);
-- падает `monkey_entry`, `monkey_exit` проходит → проблема во входе (сигналы/vote);
-- падает `monkey_both` при прохождении обоих одиночных → edge в комбинации/взаимодействии.
+1. **H-exit** (триггер: fail `monkey_exit`).
+2. Kill-порог `max_daily_loss_pct`.
+3. Реакция на momentum-diag / смена класса.
+4. Order flow edge — дальний горизонт.
+5. Усиления monkey (per-TF, walk-forward, …).
+6. **Window D** — только если темп C всё ещё низкий или monkey_entry FAIL;
+   не планировать заранее ослабление `vote_min_directional` до 1.
 
-## Momentum-диагностика (NO-HASH, сейчас)
-
-`python -m bot --momentum-diag` → Hurst (log-returns R/S) + Variance Ratio +
-лаговая corr на неперекрывающихся окнах по каждой ячейке symbol×tf.
-Результат — `data/momentum_diag.json`. **Не меняет config / hash.**
-
-Теневой сбор коротких ТФ (record-only): `shadow_timeframes_min: [1, 5]` пишет
-в `shadow_bars` (не в `bars`), без сигналов/ордеров. Диагностика:
-`python -m bot --momentum-diag --shadow` → `data/momentum_diag_shadow.json`
-+ costs-арифметика (median move bps / RT cost bps). **НЕ в policy_hash.**
-Живую торговлю на 1/5m не запускать, пока диагностика + costs не зелёные;
-это вход для будущего `[NEW-HASH]` окна, не для текущего window B.
-
-Order-flow сбор (record-only): `orderflow_collect` + `orderflow_tf_min`
-пишут `orderflow_bars` / `footprint` (дельта, buy/sell vol). **НЕ в hash,
-НЕ в сигнал.** CVD вычислять при чтении. Шаг 2 (проверка гипотезы vs Mo) —
-только после накопления + закрытых сделок window B; заранее зафиксировать
-2–3 гипотезы (не перебирать признаки).
-
-Перекрёстная валидация с monkey:
-- Hurst<0.5 + fail `monkey_entry` → согласованное свидетельство против bar-momentum;
-- Hurst>0.5 + PASS `monkey_entry` → предпосылка подтверждена независимо от Chan.
-
-## POST-200 / NEW-HASH (не трогать до ≥200 сделок + вердикта гейта)
-
-Зафиксированные методы/гипотезы (чтобы не потерять и не обсуждать заново):
-
-1. **H-exit** (триггер: fail `monkey_exit`): в отдельном окне сравнить
-   - H-exit-A: калибровка `trailing_buffer_frac` от баров;
-   - H-exit-B: убрать trailing, выход только rule3 FLAT (`book_close` / `rule3_only`).
-   Обе `[NEW-HASH]`.
-2. **Kill-порог** `max_daily_loss_pct`: калибровка от эмпирических дневных ходов
-   (учёт kurtosis крипты), между окнами, не внутри замера.
-3. **Реакция на momentum-diag**: срез TF / смена класса (MR или order-flow) —
-   только по данным, отдельные окна `[NEW-HASH]`.
-4. **Order flow edge** — дальний горизонт, если bar-momentum мёртв.
-5. **Усиления monkey**: per-TF monkey; эмпирический hold (p25/p50/p75);
-   walk-forward + t-тест OOS-vs-IS; Calmar≥1 как приёмка на стадии live;
-   Kelly/half-Kelly как верхняя граница плеча (не таргет; без constant-leverage
-   rebalancing на непроверенном edge).
-
-Отклонено сейчас: ARIMA/Bollinger/OU (MR-класс), ML на midprice, Kelly/Markowitz
-аллокация на <200 сделок, cross-exchange arb, news-momentum.
+Отклонено сейчас: ARIMA/Bollinger/OU, ML на midprice, Kelly/Markowitz на <200,
+cross-exchange arb, news-momentum.
 
 ## Команды
 ```bash
@@ -124,5 +86,5 @@ python -m bot --cabinet
 python -m bot --monkey [--runs 2000] [--seed 42] [--monkey-mode all|entry|exit|both]
 python -m bot --momentum-diag
 python -m bot --momentum-diag --shadow
-python scripts/start_window_b.py
+python scripts/start_window_c.py
 ```

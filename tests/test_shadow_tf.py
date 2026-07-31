@@ -21,7 +21,7 @@ def test_shadow_tf_not_in_hash():
     """Main NO-HASH invariant: shadow TF list must not change frozen_policy_hash."""
     base = load_settings()
     h0 = base.frozen_policy_hash()
-    assert h0 == "3eddb8d58eff91d6"
+    assert h0 == "b38a2daf61e58795"
 
     a = Settings(
         deposit_usd=base.deposit_usd,

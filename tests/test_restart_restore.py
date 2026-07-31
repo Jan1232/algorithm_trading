@@ -134,7 +134,7 @@ def test_restore_partial_via_fetch(tmp_path: Path):
 def test_restore_not_in_hash():
     base = load_settings()
     h0 = base.frozen_policy_hash()
-    assert h0 == "3eddb8d58eff91d6"
+    assert h0 == "b38a2daf61e58795"
 
     off = Settings(
         deposit_usd=base.deposit_usd,

@@ -18,7 +18,7 @@ from bot.storage.db import TradeStore
 def test_orderflow_not_in_hash():
     base = load_settings()
     h0 = base.frozen_policy_hash()
-    assert h0 == "3eddb8d58eff91d6"
+    assert h0 == "b38a2daf61e58795"
 
     common = dict(
         deposit_usd=base.deposit_usd,
